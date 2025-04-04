@@ -14,7 +14,7 @@ const steps: Step[] = [
   {
     id: 'upload',
     title: 'Upload Files',
-    description: 'Upload the required asset files for your preview card.'
+    description: 'Add URLs for the required asset files for your preview card.'
   },
   {
     id: 'preview',
@@ -65,15 +65,15 @@ const Index = () => {
     if (activeStep < steps.length - 1) {
       // Validate current step before proceeding
       if (activeStep === 0) {
-        const requiredFiles = ['inner', 'outer', 'overlay'];
-        const missingFiles = requiredFiles.filter(name => 
-          !files.some(f => f.name === name && f.file)
+        const requiredImages = ['inner', 'outer', 'overlay'];
+        const missingImages = requiredImages.filter(name => 
+          !files.some(f => f.name === name && f.preview)
         );
         
-        if (missingFiles.length > 0) {
+        if (missingImages.length > 0) {
           toast({
-            title: "Missing files",
-            description: `Please upload all required files: ${missingFiles.join(', ')}.png`,
+            title: "Missing images",
+            description: `Please add URLs for all required images: ${missingImages.join(', ')}.png`,
             variant: "destructive"
           });
           return;

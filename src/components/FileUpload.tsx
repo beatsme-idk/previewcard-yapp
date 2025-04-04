@@ -1,10 +1,9 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ImageFile } from "@/lib/types";
 import { LinkIcon, X, CheckCircle, ExternalLink } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 
@@ -61,7 +60,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
     if (await validateImageUrl(url, name)) {
       // Update the files state with the URL as preview
       const updatedFiles = files.map(item => 
-        item.name === name ? { ...item, file: null, preview: url } : item
+        item.name === name ? { ...item, preview: url } : item
       );
       setFiles(updatedFiles);
       onFilesChange(updatedFiles);
