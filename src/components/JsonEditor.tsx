@@ -103,7 +103,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ previewData }) => {
                 <h4 className="font-medium">How to update your record:</h4>
                 <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                   <li>Log in to JustaName with your Yodl subdomain wallet</li>
-                  <li>Navigate to Profile > Edit Profile > Custom</li>
+                  <li>Navigate to Profile &gt; Edit Profile &gt; Custom</li>
                   <li>Paste the JSON above into the editor</li>
                   <li>Save your changes</li>
                 </ol>
