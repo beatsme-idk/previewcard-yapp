@@ -1,12 +1,198 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React, { useState, useEffect } from 'react';
+import { Button } from "@/components/ui/button";
+import StepWizard from '@/components/StepWizard';
+import FileUpload from '@/components/FileUpload';
+import PreviewCard from '@/components/PreviewCard';
+import JsonEditor from '@/components/JsonEditor';
+import WalletConnect from '@/components/WalletConnect';
+import { ImageFile, PreviewData, Step, FolderPath } from '@/lib/types';
+import { ArrowLeft, ArrowRight, Github } from "lucide-react";
+import { useToast } from '@/components/ui/use-toast';
+
+const steps: Step[] = [
+  {
+    id: 'upload',
+    title: 'Upload Files',
+    description: 'Upload the required asset files for your preview card.'
+  },
+  {
+    id: 'preview',
+    title: 'Preview',
+    description: 'Configure and preview your OG card.'
+  },
+  {
+    id: 'update',
+    title: 'Update ENS',
+    description: 'Update your ENS record with the preview URL.'
+  }
+];
 
 const Index = () => {
+  const { toast } = useToast();
+  const [activeStep, setActiveStep] = useState(0);
+  const [files, setFiles] = useState<ImageFile[]>([]);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [folderPath, setFolderPath] = useState<FolderPath | null>(null);
+
+  // Update preview data when files or folder path changes
+  useEffect(() => {
+    if (files.length > 0) {
+      const filesData = {
+        inner: files.find(f => f.name === 'inner')?.preview || null,
+        outer: files.find(f => f.name === 'outer')?.preview || null,
+        overlay: files.find(f => f.name === 'overlay')?.preview || null,
+      };
+      
+      setPreviewData({
+        baseUrl: folderPath 
+          ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
+          : '',
+        files: filesData
+      });
+    }
+  }, [files, folderPath]);
+
+  const handleFilesChange = (newFiles: ImageFile[]) => {
+    setFiles(newFiles);
+  };
+
+  const handleFolderPathChange = (path: FolderPath) => {
+    setFolderPath(path);
+  };
+
+  const handleNext = () => {
+    if (activeStep < steps.length - 1) {
+      // Validate current step before proceeding
+      if (activeStep === 0) {
+        const requiredFiles = ['inner', 'outer', 'overlay'];
+        const missingFiles = requiredFiles.filter(name => 
+          !files.some(f => f.name === name && f.file)
+        );
+        
+        if (missingFiles.length > 0) {
+          toast({
+            title: "Missing files",
+            description: `Please upload all required files: ${missingFiles.join(', ')}.png`,
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+      
+      if (activeStep === 1 && (!folderPath || !folderPath.username || !folderPath.repo)) {
+        toast({
+          title: "Missing repository information",
+          description: "Please enter GitHub username and repository name.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      setActiveStep(activeStep + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (activeStep > 0) {
+      setActiveStep(activeStep - 1);
+    }
+  };
+
+  const handleUploadToGitHub = () => {
+    // Simulating upload process
+    toast({
+      title: "Upload functionality coming soon",
+      description: "In the future, assets will be uploaded directly to your GitHub repository."
+    });
+  };
+
+  const renderStepContent = () => {
+    switch (activeStep) {
+      case 0:
+        return <FileUpload onFilesChange={handleFilesChange} />;
+      case 1:
+        return <PreviewCard previewData={previewData} onFolderPathChange={handleFolderPathChange} />;
+      case 2:
+        return <JsonEditor previewData={previewData} />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen flex flex-col">
+      <header className="border-b border-border">
+        <div className="container py-4 flex justify-between items-center">
+          <h1 className="text-2xl font-bold gradient-text">Yodl OG Card Crafter</h1>
+          <div className="flex items-center space-x-2">
+            <WalletConnect />
+            <a href="https://github.com/yodl" target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="icon">
+                <Github />
+              </Button>
+            </a>
+          </div>
+        </div>
+      </header>
+      
+      <main className="container flex-1 py-8 px-4 md:px-8">
+        <div className="max-w-4xl mx-auto">
+          <StepWizard 
+            steps={steps} 
+            activeStep={activeStep} 
+            onStepChange={setActiveStep} 
+          />
+          
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold">{steps[activeStep].title}</h2>
+            <p className="text-muted-foreground">{steps[activeStep].description}</p>
+          </div>
+          
+          <div className="animate-fade-in">
+            {renderStepContent()}
+          </div>
+          
+          <div className="mt-8 flex justify-between">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              disabled={activeStep === 0}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </Button>
+            
+            <div className="flex space-x-2">
+              {activeStep === 1 && (
+                <Button 
+                  variant="secondary" 
+                  onClick={handleUploadToGitHub}
+                  disabled={!previewData || !folderPath}
+                >
+                  Upload to GitHub
+                </Button>
+              )}
+              
+              {activeStep < steps.length - 1 ? (
+                <Button onClick={handleNext} className="gap-2">
+                  Next <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button onClick={() => setActiveStep(0)} className="gap-2">
+                  Start Over
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
+      
+      <footer className="border-t border-border py-4">
+        <div className="container text-center text-sm text-muted-foreground">
+          <p>Yodl OG Card Crafter - Customize your Yodl preview cards</p>
+        </div>
+      </footer>
     </div>
   );
 };
