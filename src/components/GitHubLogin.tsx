@@ -5,23 +5,50 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { GitHubAuthService } from '@/lib/githubAuthService';
+import { GitHubAuthService, GitHubUser } from '@/lib/githubAuthService';
 import { GitHubService } from '@/lib/githubService';
-import { Loader2, LogOut, Github, AlertCircle } from 'lucide-react';
+import { Loader2, LogOut, Github, AlertCircle, InfoIcon } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface GitHubLoginProps {
   onAuthChange?: (isAuthenticated: boolean) => void;
 }
 
+const DemoModeAlert = () => {
+  const [visible, setVisible] = useState(true);
+
+  if (!visible) return null;
+  
+  return (
+    <Alert className="mb-4 bg-amber-50 border-amber-200">
+      <InfoIcon className="h-4 w-4 text-amber-500" />
+      <AlertTitle className="text-amber-800">Demo Mode Active</AlertTitle>
+      <AlertDescription className="text-amber-700">
+        You're using a simulated GitHub account. Some features like repository creation 
+        and file uploads are simulated with mock data.
+      </AlertDescription>
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        className="absolute top-2 right-2 h-6 w-6 p-0 rounded-full text-amber-500 hover:text-amber-700 hover:bg-amber-100"
+        onClick={() => setVisible(false)}
+      >
+        ×
+      </Button>
+    </Alert>
+  );
+};
+
 const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
   const { toast } = useToast();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<GitHubUser | null>(null);
   const [showManualTokenDialog, setShowManualTokenDialog] = useState(false);
   const [manualToken, setManualToken] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const authService = GitHubAuthService.getInstance();
   const githubService = new GitHubService();
@@ -35,6 +62,10 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
         try {
           const userInfo = authService.getUser() || await authService.fetchUserInfo();
           setUser(userInfo);
+          
+          // Check if using a simulated token
+          const token = authService.getToken() || '';
+          setIsDemoMode(token.startsWith('gh_simulated_') || token.startsWith('gh_'));
         } catch (error) {
           console.error('Error fetching user info:', error);
         }
@@ -55,6 +86,7 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
     authService.signOut();
     setIsAuthenticated(false);
     setUser(null);
+    setIsDemoMode(false);
     if (onAuthChange) onAuthChange(false);
     
     toast({
@@ -84,6 +116,9 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
         setIsAuthenticated(true);
         setShowManualTokenDialog(false);
         if (onAuthChange) onAuthChange(true);
+        
+        // Check if the token is a simulated one
+        setIsDemoMode(manualToken.startsWith('gh_simulated_') || manualToken.startsWith('gh_'));
         
         toast({
           title: "Connected to GitHub",
@@ -119,31 +154,27 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
 
   if (isAuthenticated && user) {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="flex items-center gap-2">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={user.avatar_url} alt={user.login} />
-              <AvatarFallback>{user.login?.substring(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <span className="max-w-[100px] truncate">{user.login}</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem 
-            className="text-destructive gap-2 cursor-pointer"
-            onClick={handleSignOut}
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex flex-col">
+        {isDemoMode && <DemoModeAlert />}
+        
+        <div className="flex items-center gap-4 mb-4">
+          {user.avatar_url && (
+            <img src={user.avatar_url} alt={user.login} className="w-10 h-10 rounded-full" />
+          )}
+          <div>
+            <div className="font-medium">{user.name || user.login}</div>
+            <div className="text-sm text-gray-500">{user.login}</div>
+          </div>
+        </div>
+        <Button onClick={handleSignOut} variant="outline" size="sm">
+          Sign Out
+        </Button>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-col">
       <div className="flex space-x-2">
         <Button onClick={handleGitHubSignIn} className="gap-2">
           <Github className="h-4 w-4" />
@@ -197,7 +228,7 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 };
 

@@ -1,153 +1,146 @@
 import { Octokit } from 'octokit';
+import { GitHubAuthService } from './githubAuthService';
 
-interface RateLimit {
+// Interface for GitHub rate limit info
+interface RateLimitInfo {
   limit: number;
+  used: number;
   remaining: number;
   reset: number;
-  used: number;
-  resource?: string; // Make the resource field optional
+}
+
+// Interface for all rate limits
+interface RateLimits {
+  core: RateLimitInfo;
+  graphql: RateLimitInfo;
+  search: RateLimitInfo;
+  [key: string]: RateLimitInfo;
 }
 
 export class GitHubRateLimitService {
-  private static instance: GitHubRateLimitService;
-  private rateLimits: Record<string, RateLimit> = {};
-  private lastUpdated: number = 0;
-  
-  // How often to update rate limits in milliseconds
-  private updateInterval: number = 5 * 60 * 1000; // 5 minutes
-  
+  private limits: RateLimits | null = null;
+  private lastChecked: number = 0;
+  private authService: GitHubAuthService;
+
   constructor() {
-    // Load any saved rate limits from localStorage
-    const savedLimits = localStorage.getItem('github_rate_limits');
-    if (savedLimits) {
-      try {
-        const parsed = JSON.parse(savedLimits);
-        this.rateLimits = parsed.rateLimits || {};
-        this.lastUpdated = parsed.lastUpdated || 0;
-      } catch (e) {
-        console.warn('Failed to parse saved rate limits');
-      }
-    }
+    this.authService = GitHubAuthService.getInstance();
+  }
+
+  // Check if we're using a simulated token that doesn't support real API calls
+  private isUsingSimulatedToken(): boolean {
+    const token = this.authService.getToken();
+    return !!token && (token.startsWith('gh_simulated_') || token.startsWith('gh_'));
   }
   
-  public static getInstance(): GitHubRateLimitService {
-    if (!GitHubRateLimitService.instance) {
-      GitHubRateLimitService.instance = new GitHubRateLimitService();
-    }
-    return GitHubRateLimitService.instance;
-  }
-  
-  /**
-   * Updates rate limits from GitHub API
-   * @param octokit Authenticated Octokit instance
-   * @returns Promise<boolean> Success status
-   */
-  public async updateRateLimits(octokit: Octokit): Promise<boolean> {
-    if (!octokit) return false;
-    
-    // Only update if it's been more than the update interval
-    const now = Date.now();
-    if (now - this.lastUpdated < this.updateInterval) {
-      return true;
-    }
-    
-    try {
-      const { data } = await octokit.rest.rateLimit.get();
-      
-      // Store rate limits for different resources
-      this.rateLimits = {
-        core: { ...data.resources.core, resource: 'core' },
-        search: { ...data.resources.search, resource: 'search' },
-        graphql: { ...data.resources.graphql, resource: 'graphql' },
-        integration_manifest: { ...data.resources.integration_manifest, resource: 'integration_manifest' },
-        code_scanning_upload: { ...data.resources.code_scanning_upload, resource: 'code_scanning_upload' }
-      };
-      
-      this.lastUpdated = now;
-      
-      // Save to localStorage
-      localStorage.setItem('github_rate_limits', JSON.stringify({
-        rateLimits: this.rateLimits,
-        lastUpdated: this.lastUpdated
-      }));
-      
-      return true;
-    } catch (error) {
-      console.error('Failed to fetch rate limits:', error);
-      return false;
-    }
-  }
-  
-  /**
-   * Checks if there are enough API calls remaining for a resource
-   * @param resource The API resource (core, search, etc.)
-   * @param minimumRequired Minimum number of calls needed
-   * @returns true if enough calls remain, false otherwise
-   */
-  public hasEnoughRemaining(resource: string = 'core', minimumRequired: number = 10): boolean {
-    const resourceLimit = this.rateLimits[resource];
-    
-    if (!resourceLimit) {
-      return true; // Assume it's ok if we don't have data
-    }
-    
-    // Check if reset time has passed
-    const now = Math.floor(Date.now() / 1000);
-    if (now > resourceLimit.reset) {
-      return true; // Limit has reset, so we're good
-    }
-    
-    return resourceLimit.remaining >= minimumRequired;
-  }
-  
-  /**
-   * Get formatted info about rate limits
-   * @param resource API resource name
-   * @returns Object with formatted info
-   */
-  public getRateLimitInfo(resource: string = 'core'): {
-    remaining: number;
-    total: number;
-    used: number;
-    resetTime: string;
-    isLow: boolean;
-  } {
-    const resourceLimit = this.rateLimits[resource];
-    
-    if (!resourceLimit) {
-      return {
-        remaining: 5000,
-        total: 5000,
-        used: 0,
-        resetTime: 'Unknown',
-        isLow: false
-      };
-    }
-    
-    const resetDate = new Date(resourceLimit.reset * 1000);
-    
+  // Get default mock rate limits for demo mode
+  private getMockRateLimits(): RateLimits {
     return {
-      remaining: resourceLimit.remaining,
-      total: resourceLimit.limit,
-      used: resourceLimit.used,
-      resetTime: resetDate.toLocaleTimeString(),
-      isLow: resourceLimit.remaining < 100
+      core: {
+        limit: 5000,
+        used: 10,
+        remaining: 4990,
+        reset: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+      },
+      search: {
+        limit: 30,
+        used: 2,
+        remaining: 28,
+        reset: Math.floor(Date.now() / 1000) + 60 // 1 minute from now
+      },
+      graphql: {
+        limit: 5000,
+        used: 5,
+        remaining: 4995,
+        reset: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+      },
+      integration_manifest: {
+        limit: 5000,
+        used: 0,
+        remaining: 5000,
+        reset: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+      },
+      code_scanning_upload: {
+        limit: 500,
+        used: 0,
+        remaining: 500,
+        reset: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+      }
     };
   }
+
+  // Update rate limits by fetching the latest from GitHub API
+  public async updateRateLimits(octokit: Octokit): Promise<void> {
+    // Use mock data for simulated tokens
+    if (this.isUsingSimulatedToken()) {
+      console.log('Using mock rate limits for demo mode');
+      this.limits = this.getMockRateLimits();
+      this.lastChecked = Date.now();
+      return;
+    }
+
+    try {
+      const { data } = await octokit.rest.rateLimit.get();
+      this.limits = data.resources as RateLimits;
+      this.lastChecked = Date.now();
+    } catch (error) {
+      console.error('Failed to fetch rate limits:', error);
+      throw error;
+    }
+  }
+
+  // Get the current rate limits
+  public getRateLimits(): RateLimits | null {
+    // If using simulated token and no limits exist, initialize with mock data
+    if (this.isUsingSimulatedToken() && !this.limits) {
+      this.limits = this.getMockRateLimits();
+      this.lastChecked = Date.now();
+    }
+    
+    return this.limits;
+  }
+
+  // Check if we're about to exceed a rate limit
+  public checkRateLimit(category: string, requiredCalls: number = 1): void {
+    // Never throw rate limit errors if using simulated token
+    if (this.isUsingSimulatedToken()) {
+      return;
+    }
   
-  /**
-   * Check if a request can be made and throw error if rate limited
-   * @param resource API resource to check
-   * @param minimumRequired Minimum calls needed
-   * @throws Error if rate limited
-   */
-  public checkRateLimit(resource: string = 'core', minimumRequired: number = 5): void {
-    if (!this.hasEnoughRemaining(resource, minimumRequired)) {
-      const info = this.getRateLimitInfo(resource);
+    if (!this.limits || !this.limits[category]) {
+      throw new Error(`Rate limit information for ${category} not available. Please call updateRateLimits first.`);
+    }
+
+    const limit = this.limits[category];
+    
+    if (limit.remaining < requiredCalls) {
+      const resetTime = new Date(limit.reset * 1000);
+      const minutesUntilReset = Math.ceil((resetTime.getTime() - Date.now()) / (1000 * 60));
+      
       throw new Error(
-        `GitHub API rate limit exceeded. ${info.remaining} remaining. ` +
-        `Resets at ${info.resetTime}.`
+        `GitHub API rate limit for ${category} exceeded. ` +
+        `${limit.remaining} of ${limit.limit} calls remaining. ` +
+        `Rate limit will reset in ${minutesUntilReset} minutes.`
       );
+    }
+  }
+
+  // Time since last rate limit check
+  public getTimeSinceLastCheck(): number {
+    return Date.now() - this.lastChecked;
+  }
+
+  // Check if the token is valid
+  public async isTokenValid(octokit: Octokit): Promise<boolean> {
+    // Always return true for simulated tokens
+    if (this.isUsingSimulatedToken()) {
+      return true;
+    }
+  
+    try {
+      await octokit.rest.users.getAuthenticated();
+      return true;
+    } catch (error) {
+      return false;
     }
   }
 } 

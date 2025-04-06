@@ -3,6 +3,17 @@ import { FolderPath, ImageFile } from './types';
 import { GitHubAuthService } from './githubAuthService';
 import { GitHubRateLimitService } from './gitHubRateLimitService';
 
+// Interface for repository data
+export interface GitHubRepository {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  default_branch: string;
+  visibility: string;
+}
+
 export class GitHubService {
   private octokit: Octokit | null = null;
   private authService: GitHubAuthService;
@@ -10,27 +21,96 @@ export class GitHubService {
   
   constructor() {
     this.authService = GitHubAuthService.getInstance();
-    this.rateLimitService = GitHubRateLimitService.getInstance();
-    this.octokit = this.authService.getOctokit();
-    
-    // If we have an octokit instance, update rate limits
-    if (this.octokit) {
-      this.rateLimitService.updateRateLimits(this.octokit).catch(err => {
-        console.warn('Failed to update rate limits initially:', err);
-      });
+    this.rateLimitService = new GitHubRateLimitService();
+    this.initOctokit();
+  }
+  
+  private initOctokit() {
+    const token = this.authService.getToken();
+    if (token) {
+      this.octokit = new Octokit({ auth: token });
     }
   }
+  
+  public isAuthenticated(): boolean {
+    return this.authService.isAuthenticated();
+  }
+  
+  public getAuthService(): GitHubAuthService {
+    return this.authService;
+  }
 
-  setToken(token: string) {
-    this.authService.setManualToken(token);
-    this.octokit = this.authService.getOctokit();
-    
-    // Update rate limits with new token
-    if (this.octokit) {
-      this.rateLimitService.updateRateLimits(this.octokit).catch(err => {
-        console.warn('Failed to update rate limits after setting token:', err);
-      });
+  public getRateLimitService(): GitHubRateLimitService {
+    return this.rateLimitService;
+  }
+  
+  private isUsingSimulatedToken(): boolean {
+    const token = this.authService.getToken();
+    return !!token && (token.startsWith('gh_simulated_') || token.startsWith('gh_'));
+  }
+  
+  public async getUserRepositories(): Promise<GitHubRepository[]> {
+    // Return mock data if using simulated token
+    if (this.isUsingSimulatedToken()) {
+      console.log('Using simulated repositories data for demo mode');
+      return this.getMockRepositories();
     }
+  
+    if (!this.octokit) {
+      throw new Error('Not authenticated');
+    }
+    
+    try {
+      const { data } = await this.octokit.rest.repos.listForAuthenticatedUser({
+        sort: 'updated',
+        per_page: 100
+      });
+      
+      await this.rateLimitService.updateRateLimits(this.octokit);
+      
+      return data.map(repo => ({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.full_name,
+        html_url: repo.html_url,
+        description: repo.description || null,
+        default_branch: repo.default_branch,
+        visibility: repo.visibility
+      }));
+    } catch (error) {
+      console.error('Error fetching repositories:', error);
+      
+      // Return mock data as fallback if API call fails
+      if (this.isUsingSimulatedToken()) {
+        return this.getMockRepositories();
+      }
+      
+      throw error;
+    }
+  }
+  
+  // Get mock repositories for simulated/demo mode
+  private getMockRepositories(): GitHubRepository[] {
+    return [
+      {
+        id: 1296269,
+        name: 'demo-repo',
+        full_name: 'demo-user/demo-repo',
+        html_url: 'https://github.com/demo-user/demo-repo',
+        description: 'Demo repository for preview card testing',
+        default_branch: 'main',
+        visibility: 'public'
+      },
+      {
+        id: 1296270,
+        name: 'preview-card-assets',
+        full_name: 'demo-user/preview-card-assets',
+        html_url: 'https://github.com/demo-user/preview-card-assets',
+        description: 'Storage for preview card assets',
+        default_branch: 'main',
+        visibility: 'public'
+      }
+    ];
   }
 
   async uploadFile(
@@ -155,45 +235,6 @@ export class GitHubService {
     };
   }
 
-  async getUserRepositories() {
-    this.octokit = this.authService.getOctokit();
-    
-    if (!this.octokit) {
-      throw new Error('GitHub authentication required');
-    }
-    
-    // Check rate limits
-    try {
-      this.rateLimitService.checkRateLimit('core', 1);
-    } catch (error: any) {
-      if (error.message.includes('rate limit exceeded')) {
-        throw error;
-      }
-    }
-
-    try {
-      const { data } = await this.octokit.rest.repos.listForAuthenticatedUser({
-        sort: 'updated',
-        per_page: 100
-      });
-      
-      // Update rate limits after operation
-      this.rateLimitService.updateRateLimits(this.octokit).catch(console.error);
-      
-      return data.map(repo => ({
-        id: repo.id,
-        name: repo.name,
-        full_name: repo.full_name,
-        owner: repo.owner.login,
-        private: repo.private,
-        html_url: repo.html_url
-      }));
-    } catch (error) {
-      console.error('Error fetching repositories:', error);
-      throw error;
-    }
-  }
-
   async createRepository(repoName: string, isPrivate: boolean = false) {
     this.octokit = this.authService.getOctokit();
     
@@ -244,10 +285,6 @@ export class GitHubService {
     }
   }
 
-  isAuthenticated() {
-    return this.authService.isAuthenticated();
-  }
-
   getUser() {
     return this.authService.getUser();
   }
@@ -257,7 +294,137 @@ export class GitHubService {
     this.octokit = null;
   }
   
-  getRateLimitInfo(resource: string = 'core') {
-    return this.rateLimitService.getRateLimitInfo(resource);
+  getRateLimitInfo() {
+    const limits = this.rateLimitService.getRateLimits();
+    if (!limits || !limits.core) {
+      return {
+        remaining: 5000,
+        total: 5000,
+        used: 0,
+        resetTime: 'Unknown',
+        isLow: false
+      };
+    }
+    
+    const core = limits.core;
+    const resetDate = new Date(core.reset * 1000);
+    
+    return {
+      remaining: core.remaining,
+      total: core.limit,
+      used: core.used,
+      resetTime: resetDate.toLocaleTimeString(),
+      isLow: core.remaining < 100
+    };
+  }
+
+  async getRepositoryContent(owner: string, repo: string, path: string, ref: string = '') {
+    if (this.isUsingSimulatedToken()) {
+      console.log('Using mock content data for demo mode');
+      return this.getMockRepositoryContent(path);
+    }
+    
+    if (!this.octokit) {
+      throw new Error('Not authenticated');
+    }
+    
+    try {
+      const requestParams = {
+        owner,
+        repo,
+        path,
+        ...(ref ? { ref } : {})
+      };
+      
+      // Get the content
+      const { data } = await this.octokit.rest.repos.getContent(requestParams);
+      
+      // Update rate limits
+      await this.rateLimitService.updateRateLimits(this.octokit);
+      
+      return data;
+    } catch (error) {
+      console.error('Error getting repository content:', error);
+      throw error;
+    }
+  }
+  
+  private getMockRepositoryContent(path: string) {
+    // Return mock data based on the path requested
+    if (path === '' || path === '/') {
+      return [
+        {
+          name: 'README.md',
+          path: 'README.md',
+          sha: 'abc123',
+          size: 100,
+          url: 'https://api.github.com/repos/demo-user/demo-repo/contents/README.md',
+          html_url: 'https://github.com/demo-user/demo-repo/blob/main/README.md',
+          git_url: 'https://api.github.com/repos/demo-user/demo-repo/git/blobs/abc123',
+          download_url: 'https://raw.githubusercontent.com/demo-user/demo-repo/main/README.md',
+          type: 'file',
+          _links: {
+            self: 'https://api.github.com/repos/demo-user/demo-repo/contents/README.md',
+            git: 'https://api.github.com/repos/demo-user/demo-repo/git/blobs/abc123',
+            html: 'https://github.com/demo-user/demo-repo/blob/main/README.md'
+          }
+        },
+        {
+          name: 'assets',
+          path: 'assets',
+          sha: 'def456',
+          size: 0,
+          url: 'https://api.github.com/repos/demo-user/demo-repo/contents/assets',
+          html_url: 'https://github.com/demo-user/demo-repo/tree/main/assets',
+          git_url: 'https://api.github.com/repos/demo-user/demo-repo/git/trees/def456',
+          download_url: null,
+          type: 'dir',
+          _links: {
+            self: 'https://api.github.com/repos/demo-user/demo-repo/contents/assets',
+            git: 'https://api.github.com/repos/demo-user/demo-repo/git/trees/def456',
+            html: 'https://github.com/demo-user/demo-repo/tree/main/assets'
+          }
+        }
+      ];
+    } else if (path === 'assets') {
+      return [
+        {
+          name: 'preview.png',
+          path: 'assets/preview.png',
+          sha: 'ghi789',
+          size: 5000,
+          url: 'https://api.github.com/repos/demo-user/demo-repo/contents/assets/preview.png',
+          html_url: 'https://github.com/demo-user/demo-repo/blob/main/assets/preview.png',
+          git_url: 'https://api.github.com/repos/demo-user/demo-repo/git/blobs/ghi789',
+          download_url: 'https://raw.githubusercontent.com/demo-user/demo-repo/main/assets/preview.png',
+          type: 'file',
+          _links: {
+            self: 'https://api.github.com/repos/demo-user/demo-repo/contents/assets/preview.png',
+            git: 'https://api.github.com/repos/demo-user/demo-repo/git/blobs/ghi789',
+            html: 'https://github.com/demo-user/demo-repo/blob/main/assets/preview.png'
+          }
+        }
+      ];
+    } else {
+      // Return some default file content for any specific file request
+      return {
+        name: path.split('/').pop(),
+        path: path,
+        sha: 'mock123',
+        size: 100,
+        url: `https://api.github.com/repos/demo-user/demo-repo/contents/${path}`,
+        html_url: `https://github.com/demo-user/demo-repo/blob/main/${path}`,
+        git_url: `https://api.github.com/repos/demo-user/demo-repo/git/blobs/mock123`,
+        download_url: `https://raw.githubusercontent.com/demo-user/demo-repo/main/${path}`,
+        type: 'file',
+        content: Buffer.from('# Mock Content\n\nThis is mock content for demo purposes.').toString('base64'),
+        encoding: 'base64',
+        _links: {
+          self: `https://api.github.com/repos/demo-user/demo-repo/contents/${path}`,
+          git: `https://api.github.com/repos/demo-user/demo-repo/git/blobs/mock123`,
+          html: `https://github.com/demo-user/demo-repo/blob/main/${path}`
+        }
+      };
+    }
   }
 } 
