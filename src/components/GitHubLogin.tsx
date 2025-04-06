@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { GitHubAuthService, GitHubUser } from '@/lib/githubAuthService';
 import { GitHubService } from '@/lib/githubService';
-import { Loader2, LogOut, Github, AlertCircle, InfoIcon } from 'lucide-react';
+import { Loader2, LogOut, Github, AlertCircle, InfoIcon, LoaderCircle, Copy, CheckCircle2, Terminal } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -53,6 +53,12 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
   const [manualToken, setManualToken] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
+  const [deviceAuthData, setDeviceAuthData] = useState<{
+    userCode: string;
+    verificationUri: string;
+  } | null>(null);
 
   const authService = GitHubAuthService.getInstance();
   const githubService = new GitHubService();
@@ -82,8 +88,64 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
     checkAuth();
   }, []);
 
-  const handleGitHubSignIn = () => {
-    authService.signIn();
+  const handleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      const deviceAuth = await authService.signIn();
+      
+      if (deviceAuth) {
+        setDeviceAuthData(deviceAuth);
+        startPolling();
+      } else {
+        toast({
+          title: "Authentication Error",
+          description: "Failed to start GitHub authentication flow.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Sign in error:', error);
+      toast({
+        title: "Authentication Error",
+        description: "An error occurred during authentication.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startPolling = () => {
+    setIsPolling(true);
+    
+    authService.pollForToken(
+      // onSuccess
+      () => {
+        setIsPolling(false);
+        setDeviceAuthData(null);
+        setIsAuthenticated(true);
+        setUser(authService.getUser());
+        toast({
+          title: "Authentication Successful",
+          description: "You've successfully connected to GitHub!",
+          variant: "default",
+        });
+      },
+      // onPending
+      () => {
+        // Continue polling, no UI updates needed
+      },
+      // onError
+      (error) => {
+        setIsPolling(false);
+        setDeviceAuthData(null);
+        toast({
+          title: "Authentication Failed",
+          description: error,
+          variant: "destructive",
+        });
+      }
+    );
   };
 
   const handleSignOut = () => {
@@ -147,6 +209,16 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
     }
   };
 
+  const copyCodeToClipboard = () => {
+    if (deviceAuthData) {
+      navigator.clipboard.writeText(deviceAuthData.userCode);
+      toast({
+        title: "Code Copied",
+        description: "User code copied to clipboard!",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <Button variant="outline" disabled className="gap-2">
@@ -180,8 +252,18 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
   return (
     <div className="flex flex-col">
       <div className="flex space-x-2">
-        <Button onClick={handleGitHubSignIn} className="gap-2">
-          <Github className="h-4 w-4" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSignIn}
+          disabled={isLoading || isPolling}
+          className="gap-2"
+        >
+          {isLoading ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <Github className="h-4 w-4" />
+          )}
           Sign in with GitHub
         </Button>
         <Button 
@@ -228,6 +310,77 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
             >
               {tokenLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Connect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deviceAuthData} onOpenChange={(open) => {
+        if (!open) setDeviceAuthData(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect to GitHub</DialogTitle>
+            <DialogDescription>
+              To link your GitHub account, please complete the following steps:
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4 space-y-4">
+            <div className="bg-muted p-4 rounded-lg text-center space-y-3">
+              <p className="text-sm text-muted-foreground">Go to:</p>
+              <a 
+                href={deviceAuthData?.verificationUri} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-lg font-semibold text-primary hover:underline block"
+              >
+                {deviceAuthData?.verificationUri}
+              </a>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground text-center">Enter this code:</p>
+              <div className="flex items-center justify-center gap-3">
+                <div className="bg-muted p-3 px-5 rounded-lg font-mono text-xl tracking-wider">
+                  {deviceAuthData?.userCode}
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={copyCodeToClipboard}
+                  className="h-8 w-8"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              {isPolling ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Waiting for GitHub authentication...
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  Ready to authenticate
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              <Terminal className="h-3 w-3 inline-block mr-1" />
+              This uses the GitHub Device Flow
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => setDeviceAuthData(null)}
+            >
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

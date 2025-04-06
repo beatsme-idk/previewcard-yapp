@@ -7,6 +7,14 @@ export interface GitHubUser {
   html_url: string;
 }
 
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
 export class GitHubAuthService {
   private static instance: GitHubAuthService;
   private token: string | null = null;
@@ -16,27 +24,6 @@ export class GitHubAuthService {
   // GitHub OAuth App credentials
   private clientId = 'Ov23lirpINVUj2qYzgtp';
   
-  // Set redirect URI based on current environment
-  private get redirectUri(): string {
-    const baseUrl = window.location.origin;
-    
-    console.log('Current hostname:', window.location.hostname);
-    console.log('Using GitHub redirectUri format without hash fragment');
-    
-    // For production
-    if (window.location.hostname === 'previewcard-yapp.lovable.app') {
-      return `${baseUrl}/github-callback`;
-    }
-    // For GitHub Pages
-    else if (window.location.hostname === 'beatsme-idk.github.io') {
-      return `${baseUrl}/previewcard-yapp/github-callback`;
-    }
-    // For local development
-    else {
-      return `${baseUrl}/github-callback`;
-    }
-  }
-
   constructor() {
     // Check if there's a stored token
     this.token = localStorage.getItem('github_token');
@@ -70,88 +57,121 @@ export class GitHubAuthService {
     return this.user;
   }
 
-  public signIn() {
-    // Standard GitHub OAuth flow
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${this.clientId}&redirect_uri=${encodeURIComponent(
-      this.redirectUri
-    )}&scope=repo`;
-    
-    console.log('Redirecting to GitHub OAuth:', authUrl);
-    window.location.href = authUrl;
+  // Start GitHub Device Flow authentication
+  public async signIn(): Promise<{ userCode: string; verificationUri: string } | null> {
+    try {
+      // Step 1: Request device and user codes
+      const response = await fetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          scope: 'repo' // Request access to repositories
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Failed to start device flow:', response.status);
+        return null;
+      }
+
+      const data = await response.json() as DeviceCodeResponse;
+      console.log('Device flow started:', data);
+
+      // Store device code in session storage (will be used for polling)
+      sessionStorage.setItem('github_device_code', data.device_code);
+      sessionStorage.setItem('github_device_interval', data.interval.toString());
+      
+      // Return the user code and verification URI to display to the user
+      return {
+        userCode: data.user_code,
+        verificationUri: data.verification_uri
+      };
+    } catch (error) {
+      console.error('Error starting device flow:', error);
+      return null;
+    }
   }
 
-  public async handleCallback(code: string): Promise<boolean> {
+  // Poll for the access token
+  public async pollForToken(onSuccess: () => void, onPending: () => void, onError: (error: string) => void): Promise<void> {
+    const deviceCode = sessionStorage.getItem('github_device_code');
+    const interval = parseInt(sessionStorage.getItem('github_device_interval') || '5', 10);
+    
+    if (!deviceCode) {
+      onError('No device code found. Please try again.');
+      return;
+    }
+
     try {
-      console.log('Handling GitHub callback with code:', code);
+      const response = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          device_code: deviceCode,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Error polling for token:', response.status);
+        onError(`HTTP error: ${response.status}`);
+        return;
+      }
+
+      const data = await response.json();
       
-      // GitHub doesn't support client-side token exchange due to CORS,
-      // so we'll use a proxy or serverless function
-      // If the proxy fails, we can recommend using personal access token instead
-      
-      // Try with multiple CORS proxies in case one fails
-      const proxyUrls = [
-        'https://cors-anywhere.herokuapp.com/https://github.com/login/oauth/access_token',
-        'https://corsproxy.io/?https://github.com/login/oauth/access_token'
-      ];
-      
-      let success = false;
-      let lastError = null;
-      
-      for (const proxyUrl of proxyUrls) {
-        try {
-          console.log(`Trying token exchange with proxy: ${proxyUrl}`);
-          
-          const response = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              client_id: this.clientId,
-              // client_secret should be kept on server, not client
-              // this is a limitation of this demo implementation
-              code: code,
-              redirect_uri: this.redirectUri
-            })
-          });
-          
-          if (!response.ok) {
-            console.warn(`Proxy ${proxyUrl} failed with status:`, response.status, response.statusText);
-            continue;
-          }
-          
-          const data = await response.json();
-          
-          if (data.access_token) {
-            this.token = data.access_token;
-            localStorage.setItem('github_token', this.token);
-            this.initOctokit();
-            
-            // Fetch user info to validate the token
-            const userInfo = await this.fetchUserInfo();
-            if (userInfo) {
-              success = true;
-              break;
-            }
-          } else {
-            console.warn('No access token in response from proxy:', proxyUrl, data);
-          }
-        } catch (error) {
-          console.warn(`Error with proxy ${proxyUrl}:`, error);
-          lastError = error;
+      if (data.error) {
+        if (data.error === 'authorization_pending') {
+          // User hasn't completed authorization yet
+          onPending();
+          // Continue polling after the interval
+          setTimeout(() => this.pollForToken(onSuccess, onPending, onError), interval * 1000);
+          return;
+        } else if (data.error === 'slow_down') {
+          // We're polling too fast, slow down
+          const newInterval = interval + 5;
+          sessionStorage.setItem('github_device_interval', newInterval.toString());
+          console.log(`Slowing down polling to ${newInterval} seconds`);
+          setTimeout(() => this.pollForToken(onSuccess, onPending, onError), newInterval * 1000);
+          return;
+        } else if (data.error === 'expired_token') {
+          onError('The device code has expired. Please try again.');
+          sessionStorage.removeItem('github_device_code');
+          sessionStorage.removeItem('github_device_interval');
+          return;
+        } else {
+          onError(`Authentication error: ${data.error_description || data.error}`);
+          return;
         }
       }
-      
-      if (success) {
-        return true;
+
+      if (data.access_token) {
+        // Success! We have an access token
+        this.token = data.access_token;
+        localStorage.setItem('github_token', this.token);
+        this.initOctokit();
+        
+        // Clean up session storage
+        sessionStorage.removeItem('github_device_code');
+        sessionStorage.removeItem('github_device_interval');
+        
+        // Fetch user info to validate token
+        await this.fetchUserInfo();
+        onSuccess();
       } else {
-        console.error('All proxies failed for token exchange. Last error:', lastError);
-        return false;
+        onError('No access token received');
       }
     } catch (error) {
-      console.error('Error handling OAuth callback:', error);
-      return false;
+      console.error('Error polling for token:', error);
+      onError('Network error while checking authorization status');
     }
   }
 

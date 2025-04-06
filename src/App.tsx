@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
-import GitHubCallback from "./pages/GitHubCallback";
 
 // Use HashRouter for all environments to avoid path issues
 // This ensures compatibility with GitHub Pages and other static hosting
@@ -15,9 +14,6 @@ const App = () => (
     <HashRouter>
       <Routes>
         <Route path="/" element={<Index />} />
-        <Route path="/github/callback" element={<GitHubCallback />} />
-        {/* Direct routes for GitHub OAuth without hash fragments */}
-        <Route path="/github-callback" element={<GitHubCallback />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>
