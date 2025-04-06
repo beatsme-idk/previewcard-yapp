@@ -21,18 +21,19 @@ export class GitHubAuthService {
     const baseUrl = window.location.origin;
     
     console.log('Current hostname:', window.location.hostname);
+    console.log('Using GitHub redirectUri format without hash fragment');
     
     // For production
     if (window.location.hostname === 'previewcard-yapp.lovable.app') {
-      return `${baseUrl}/#/github/callback`;
+      return `${baseUrl}/github-callback`;
     }
     // For GitHub Pages
     else if (window.location.hostname === 'beatsme-idk.github.io') {
-      return `${baseUrl}/previewcard-yapp/#/github/callback`;
+      return `${baseUrl}/previewcard-yapp/github-callback`;
     }
     // For local development
     else {
-      return `${baseUrl}/#/github/callback`;
+      return `${baseUrl}/github-callback`;
     }
   }
 

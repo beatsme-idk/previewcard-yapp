@@ -1,0 +1,8 @@
+{
+  "routes": [
+    { "src": "/github-callback", "dest": "/" },
+    { "src": "/github-callback/(.*)", "dest": "/" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/" }
+  ]
+} 

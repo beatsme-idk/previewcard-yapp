@@ -16,6 +16,8 @@ const App = () => (
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/github/callback" element={<GitHubCallback />} />
+        {/* Direct routes for GitHub OAuth without hash fragments */}
+        <Route path="/github-callback" element={<GitHubCallback />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>
