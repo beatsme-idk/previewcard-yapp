@@ -20,7 +20,7 @@ export class GitHubAuthService {
   private get redirectUri(): string {
     // For production
     if (window.location.hostname === 'previewcard-yapp.lovable.app') {
-      return `https://previewcard-yapp.lovable.app/github/callback`;
+      return `https://previewcard-yapp.lovable.app/#/github/callback`;
     }
     // For GitHub Pages
     else if (window.location.hostname === 'beatsme-idk.github.io') {
