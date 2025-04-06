@@ -6,6 +6,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import GitHubCallback from "./pages/GitHubCallback";
 
+// Use HashRouter for all environments to avoid path issues
+// This ensures compatibility with GitHub Pages and other static hosting
 const App = () => (
   <TooltipProvider>
     <Toaster />

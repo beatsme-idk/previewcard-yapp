@@ -30,6 +30,10 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+        env:
+          NODE_ENV: production
+          # This tells our config this is a GitHub Pages build
+          DEPLOY_ENV: github
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
