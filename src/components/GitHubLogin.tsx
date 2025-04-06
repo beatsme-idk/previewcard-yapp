@@ -25,8 +25,12 @@ const DemoModeAlert = () => {
       <InfoIcon className="h-4 w-4 text-amber-500" />
       <AlertTitle className="text-amber-800">Demo Mode Active</AlertTitle>
       <AlertDescription className="text-amber-700">
-        You're using a simulated GitHub account. Some features like repository creation 
-        and file uploads are simulated with mock data.
+        <p>You're using a simulated GitHub account. Some features like repository creation 
+        and file uploads are simulated with mock data.</p>
+        <p className="mt-2 text-xs">
+          <strong>Note:</strong> GitHub OAuth is currently in demo mode due to a configuration issue. 
+          To use with a real GitHub account, enter a personal access token using the "Use Token" button.
+        </p>
       </AlertDescription>
       <Button 
         variant="ghost" 
@@ -178,7 +182,7 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
       <div className="flex space-x-2">
         <Button onClick={handleGitHubSignIn} className="gap-2">
           <Github className="h-4 w-4" />
-          Sign in with GitHub
+          GitHub Demo Mode
         </Button>
         <Button 
           variant="outline" 

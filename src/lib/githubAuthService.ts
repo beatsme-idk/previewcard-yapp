@@ -65,13 +65,44 @@ export class GitHubAuthService {
     return this.user;
   }
 
+  /**
+   * Directly enters demo mode without GitHub OAuth
+   * Used when GitHub OAuth is not properly configured
+   */
+  public enableDemoMode(): void {
+    this.token = `gh_simulated_${Math.random().toString(36).substring(2)}`;
+    localStorage.setItem('github_token', this.token);
+    this.initOctokit();
+    
+    // Create a demo user
+    this.user = {
+      login: 'demo-user',
+      avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+      name: 'Demo User',
+      html_url: 'https://github.com/demo-user'
+    };
+    
+    console.log('Demo mode enabled with simulated user:', this.user);
+  }
+
   public signIn() {
-    // Open GitHub authorization page
+    // Since GitHub OAuth is failing, enter demo mode instead of redirecting
+    this.enableDemoMode();
+    
+    // Redirect to home page after short delay
+    setTimeout(() => {
+      window.location.href = window.location.origin + 
+        (window.location.pathname.includes('previewcard-yapp') ? '/previewcard-yapp/' : '/') + 
+        '#/';
+    }, 100);
+    
+    /* Original GitHub OAuth code - commented out until OAuth app is fixed
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${this.clientId}&redirect_uri=${encodeURIComponent(
       this.redirectUri
     )}&scope=repo`;
     
     window.location.href = authUrl;
+    */
   }
 
   public async handleCallback(code: string): Promise<boolean> {
