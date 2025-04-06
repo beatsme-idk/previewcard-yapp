@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Step } from "@/lib/types";
@@ -20,7 +19,7 @@ const StepWizard: React.FC<StepWizardProps> = ({
     <div className="w-full mb-8">
       <div className="flex items-center justify-between">
         {steps.map((step, index) => (
-          <React.Fragment key={step.id}>
+          <div key={step.id} className="flex items-center" style={{ flex: index === steps.length - 1 ? '0 0 auto' : '1 1 auto' }}>
             <Button
               variant={activeStep === index ? "default" : (index < activeStep ? "outline" : "ghost")}
               className={cn(
@@ -45,7 +44,7 @@ const StepWizard: React.FC<StepWizardProps> = ({
                 )}
               />
             )}
-          </React.Fragment>
+          </div>
         ))}
       </div>
       <div className="flex justify-between mt-2">

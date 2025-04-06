@@ -1,27 +1,91 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { FolderPath, PreviewData } from '@/lib/types';
-import { Copy, ExternalLink, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FolderPath, PreviewData, ImageFile } from '@/lib/types';
+import { Copy, ExternalLink, RefreshCw, Github, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { GitHubService } from '@/lib/githubService';
+import GitHubLogin from './GitHubLogin';
+import RateLimitIndicator from './RateLimitIndicator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface PreviewCardProps {
   previewData: PreviewData | null;
   onFolderPathChange: (path: FolderPath) => void;
+  files: ImageFile[];
 }
 
-const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChange }) => {
+interface Repository {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: string;
+}
+
+const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChange, files }) => {
   const { toast } = useToast();
   const [folderPath, setFolderPath] = useState<FolderPath>({
     username: '',
     repo: '',
-    folder: `og-custom-${Math.random().toString(36).substring(2, 8)}`
+    folder: `custom-${Math.random().toString(36).substring(2, 8)}`
   });
   const [loading, setLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [confirmUploadDialog, setConfirmUploadDialog] = useState(false);
+  const [newRepoName, setNewRepoName] = useState('');
+  const [isPrivateRepo, setIsPrivateRepo] = useState(false);
+  const [creatingRepo, setCreatingRepo] = useState(false);
+
+  // Create GitHub service instance
+  const githubService = new GitHubService();
+
+  // Load repositories when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadRepositories();
+    }
+  }, [isAuthenticated]);
+  
+  const loadRepositories = async () => {
+    setLoadingRepos(true);
+    try {
+      const repos = await githubService.getUserRepositories();
+      setRepositories(repos);
+      
+      // If we have repos, pre-fill the form with the first one
+      if (repos.length > 0) {
+        const user = githubService.getUser();
+        setFolderPath(prev => ({
+          ...prev,
+          username: user?.login || '',
+          repo: repos[0].name
+        }));
+        onFolderPathChange({
+          ...folderPath,
+          username: user?.login || '',
+          repo: repos[0].name
+        });
+      }
+    } catch (error) {
+      console.error('Error loading repositories:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load your repositories",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingRepos(false);
+    }
+  };
 
   const handleCopyUrl = () => {
     if (previewUrl) {
@@ -43,6 +107,101 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     }, 1000);
   };
 
+  const handleAuthChange = (authenticated: boolean) => {
+    setIsAuthenticated(authenticated);
+  };
+
+  const handleUploadToGitHub = () => {
+    // Check if all required files are present
+    const missingFiles = ['inner', 'outer', 'overlay'].filter(
+      name => !files.some(f => f.name === name && f.preview)
+    );
+    
+    if (missingFiles.length > 0) {
+      toast({
+        title: "Missing files",
+        description: `Please upload all required files: ${missingFiles.join(', ')}.png`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check if GitHub details are provided
+    if (!folderPath.username || !folderPath.repo) {
+      toast({
+        title: "Missing repository details",
+        description: "Please provide GitHub username and repository name",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Show confirmation dialog
+    setConfirmUploadDialog(true);
+  };
+
+  const handleConfirmUpload = async () => {
+    setUploadLoading(true);
+    
+    try {
+      // Upload files
+      const result = await githubService.uploadOgCardAssets(folderPath, files);
+      
+      if (result.success) {
+        setUploadSuccess(true);
+        toast({
+          title: "Upload successful",
+          description: "Assets have been uploaded to your GitHub repository",
+        });
+        
+        // Close the dialog after success
+        setConfirmUploadDialog(false);
+      }
+    } catch (error) {
+      console.error('Error uploading to GitHub:', error);
+      toast({
+        title: "Upload failed",
+        description: typeof error === 'object' && error !== null && 'message' in error 
+          ? String(error.message) 
+          : "An error occurred while uploading files",
+        variant: "destructive"
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const handleCreateRepository = async () => {
+    setCreatingRepo(true);
+    try {
+      const result = await githubService.createRepository(newRepoName, isPrivateRepo);
+      toast({
+        title: "Repository created successfully",
+        description: "Your new repository has been created and is ready to use",
+      });
+      
+      // Set the repository in the form
+      handlePathChange('repo', result.name);
+      handlePathChange('username', result.owner);
+      
+      // Reload repositories
+      loadRepositories();
+      setNewRepoName('');
+      setIsPrivateRepo(false);
+    } catch (error) {
+      console.error('Error creating repository:', error);
+      toast({
+        title: "Repository creation failed",
+        description: typeof error === 'object' && error !== null && 'message' in error 
+          ? String(error.message) 
+          : "An error occurred while creating the repository",
+        variant: "destructive"
+      });
+    } finally {
+      setCreatingRepo(false);
+    }
+  };
+
   // Construct the preview URL
   const previewUrl = folderPath.username && folderPath.repo && folderPath.folder 
     ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
@@ -54,130 +213,288 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     : null;
 
   return (
-    <Card className="w-full card-highlight">
-      <CardHeader>
-        <CardTitle>Preview Configuration</CardTitle>
-        <CardDescription>
-          Set up your GitHub repository details for asset storage
-        </CardDescription>
-      </CardHeader>
-      
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="username">GitHub Username</Label>
-            <Input 
-              id="username"
-              placeholder="e.g., username" 
-              value={folderPath.username}
-              onChange={(e) => handlePathChange('username', e.target.value)}
-            />
+    <>
+      <Card className="w-full card-highlight">
+        <CardHeader>
+          <CardTitle>Preview Configuration</CardTitle>
+          <CardDescription>
+            Set up your GitHub repository details for asset storage
+            {uploadSuccess && (
+              <span className="ml-2 text-green-500 text-sm">(Files uploaded successfully)</span>
+            )}
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent className="space-y-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-medium mb-2">GitHub Connection</h3>
+            <GitHubLogin onAuthChange={handleAuthChange} />
           </div>
           
-          <div>
-            <Label htmlFor="repo">Repository Name</Label>
-            <Input 
-              id="repo" 
-              placeholder="e.g., assets" 
-              value={folderPath.repo}
-              onChange={(e) => handlePathChange('repo', e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <Label htmlFor="folder">Folder Name</Label>
-            <Input 
-              id="folder" 
-              placeholder="Auto-generated unique name" 
-              value={folderPath.folder}
-              onChange={(e) => handlePathChange('folder', e.target.value)}
-            />
-          </div>
-        </div>
-
-        {previewUrl && (
-          <div className="mt-6 space-y-4">
-            <div>
-              <Label>Preview URL</Label>
-              <div className="flex mt-1">
-                <Input 
-                  readOnly 
-                  value={previewUrl}
-                  className="font-mono text-sm"
-                />
-                <Button 
-                  variant="outline" 
-                  size="icon"
-                  className="ml-2"
-                  onClick={handleCopyUrl}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="bg-muted rounded-md p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium">Yodl Preview</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  onClick={handleRefreshPreview}
-                  disabled={loading}
-                >
-                  <RefreshCw className={cn(
-                    "h-4 w-4 mr-2",
-                    loading && "animate-spin"
-                  )} />
-                  Refresh
-                </Button>
-              </div>
-              
-              <div className="relative w-full h-[300px] bg-black/30 rounded-md overflow-hidden border border-border">
-                {previewData ? (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
-                      <div className="text-sm text-muted-foreground mb-4">
-                        Files would be uploaded to:
-                        <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">/og/{folderPath.folder}/</div>
-                      </div>
-                      {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
-                      {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
-                      {previewData.files.overlay && <div className="text-green-500 text-xs">✓ overlay.png</div>}
-                      
-                      {(!previewData.files.inner || !previewData.files.outer || !previewData.files.overlay) && (
-                        <div className="text-yellow-500 text-xs mt-2">Missing required files</div>
-                      )}
-                    </div>
+          {isAuthenticated ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="repo">Repository</Label>
+                {loadingRepos ? (
+                  <div className="h-10 flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Loading repositories...
                   </div>
+                ) : repositories.length > 0 ? (
+                  <Select 
+                    value={folderPath.repo}
+                    onValueChange={(value) => handlePathChange('repo', value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select repository" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {repositories.map(repo => (
+                        <SelectItem key={repo.id} value={repo.name}>
+                          {repo.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    Preview not available - upload files first
+                  <div className="text-sm text-amber-500 p-2 rounded-md border border-amber-200 bg-amber-50">
+                    No repositories found. Please create a repository on GitHub first.
                   </div>
                 )}
               </div>
               
-              {yodlPreviewUrl && (
-                <div className="mt-3 flex justify-end">
-                  <Button variant="secondary" size="sm" className="flex items-center text-xs">
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Open in Yodl Preview
+              <div>
+                <Label htmlFor="folder">Folder Name</Label>
+                <Input 
+                  id="folder" 
+                  placeholder="Auto-generated unique name" 
+                  value={folderPath.folder}
+                  onChange={(e) => handlePathChange('folder', e.target.value)}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="username">GitHub Username</Label>
+                <Input 
+                  id="username"
+                  placeholder="e.g., username" 
+                  value={folderPath.username}
+                  onChange={(e) => handlePathChange('username', e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="repo">Repository Name</Label>
+                <Input 
+                  id="repo" 
+                  placeholder="e.g., assets" 
+                  value={folderPath.repo}
+                  onChange={(e) => handlePathChange('repo', e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="folder">Folder Name</Label>
+                <Input 
+                  id="folder" 
+                  placeholder="Auto-generated unique name" 
+                  value={folderPath.folder}
+                  onChange={(e) => handlePathChange('folder', e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {isAuthenticated && repositories.length === 0 && (
+            <div className="mt-2">
+              <Card className="border-dashed">
+                <CardContent className="pt-4">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold">Create a Repository</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Create a new GitHub repository to store your OG card assets
+                    </p>
+                    
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <Label htmlFor="new-repo" className="mb-2 block">Repository Name</Label>
+                        <Input 
+                          id="new-repo" 
+                          placeholder="og-card-assets"
+                          value={newRepoName}
+                          onChange={(e) => setNewRepoName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Button
+                          onClick={handleCreateRepository}
+                          disabled={!newRepoName.trim() || creatingRepo}
+                        >
+                          {creatingRepo ? (
+                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
+                          ) : (
+                            'Create Repository'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Checkbox 
+                        id="private-repo" 
+                        checked={isPrivateRepo}
+                        onCheckedChange={(checked) => setIsPrivateRepo(checked === true)}
+                      />
+                      <Label htmlFor="private-repo" className="text-sm font-normal">
+                        Create as private repository
+                      </Label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {previewUrl && (
+            <div className="mt-6 space-y-4">
+              <div>
+                <Label>Preview URL</Label>
+                <div className="flex mt-1">
+                  <Input 
+                    readOnly 
+                    value={previewUrl}
+                    className="font-mono text-sm"
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    className="ml-2"
+                    onClick={handleCopyUrl}
+                  >
+                    <Copy className="h-4 w-4" />
                   </Button>
                 </div>
-              )}
+              </div>
+              
+              <div className="bg-muted rounded-md p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">Yodl Preview</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={handleRefreshPreview}
+                    disabled={loading}
+                  >
+                    <RefreshCw className={cn(
+                      "h-4 w-4 mr-2",
+                      loading && "animate-spin"
+                    )} />
+                    Refresh
+                  </Button>
+                </div>
+                
+                <div className="relative w-full h-[300px] bg-black/30 rounded-md overflow-hidden border border-border">
+                  {previewData ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
+                        <div className="text-sm text-muted-foreground mb-4">
+                          Files would be uploaded to:
+                          <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">/og/{folderPath.folder}/</div>
+                        </div>
+                        {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
+                        {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
+                        {previewData.files.overlay && <div className="text-green-500 text-xs">✓ overlay.png</div>}
+                        
+                        {(!previewData.files.inner || !previewData.files.outer || !previewData.files.overlay) && (
+                          <div className="text-yellow-500 text-xs mt-2">Missing required files</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                      Preview not available - upload files first
+                    </div>
+                  )}
+                </div>
+                
+                {yodlPreviewUrl && (
+                  <div className="mt-3 flex justify-end">
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="flex items-center text-xs"
+                      onClick={() => window.open(yodlPreviewUrl, '_blank')}
+                    >
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Open in Yodl Preview
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <Button
+            className="w-full"
+            onClick={handleUploadToGitHub}
+            disabled={!previewData || !folderPath.username || !folderPath.repo || uploadSuccess || !isAuthenticated}
+          >
+            <Github className="mr-2 h-4 w-4" />
+            {uploadSuccess ? 'Files Uploaded Successfully' : isAuthenticated ? 'Upload Assets to GitHub' : 'Connect GitHub to Upload'}
+          </Button>
+          
+          {!isAuthenticated && (
+            <p className="text-sm text-muted-foreground text-center">
+              Sign in to GitHub to upload assets directly to your repository
+            </p>
+          )}
+        </CardContent>
+        
+        <CardFooter className="flex justify-between items-center">
+          <p className="text-xs text-muted-foreground">
+            Files will be uploaded to this location when you proceed
+          </p>
+          {isAuthenticated && <RateLimitIndicator />}
+        </CardFooter>
+      </Card>
+      
+      <Dialog open={confirmUploadDialog} onOpenChange={setConfirmUploadDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Upload</DialogTitle>
+            <DialogDescription>
+              Files will be uploaded to your GitHub repository:
+              <span className="font-mono text-xs block mt-1 p-1 bg-muted rounded">
+                {folderPath.username}/{folderPath.repo}/og/{folderPath.folder}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="flex flex-col space-y-1">
+              {previewData?.files.inner && <div className="text-sm">• inner.png</div>}
+              {previewData?.files.outer && <div className="text-sm">• outer.png</div>}
+              {previewData?.files.overlay && <div className="text-sm">• overlay.png</div>}
             </div>
           </div>
-        )}
-      </CardContent>
-      
-      <CardFooter className="flex justify-between">
-        <p className="text-xs text-muted-foreground">
-          Files will be uploaded to this location when you proceed
-        </p>
-      </CardFooter>
-    </Card>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmUploadDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={handleConfirmUpload} 
+              disabled={uploadLoading}
+            >
+              {uploadLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirm Upload
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

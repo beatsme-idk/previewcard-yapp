@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import StepWizard from '@/components/StepWizard';
@@ -7,7 +6,7 @@ import PreviewCard from '@/components/PreviewCard';
 import JsonEditor from '@/components/JsonEditor';
 import WalletConnect from '@/components/WalletConnect';
 import { ImageFile, PreviewData, Step, FolderPath } from '@/lib/types';
-import { ArrowLeft, ArrowRight, Github } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useToast } from '@/components/ui/use-toast';
 
 const steps: Step[] = [
@@ -99,20 +98,16 @@ const Index = () => {
     }
   };
 
-  const handleUploadToGitHub = () => {
-    // Simulating upload process
-    toast({
-      title: "Upload functionality coming soon",
-      description: "In the future, assets will be uploaded directly to your GitHub repository."
-    });
-  };
-
   const renderStepContent = () => {
     switch (activeStep) {
       case 0:
         return <FileUpload onFilesChange={handleFilesChange} />;
       case 1:
-        return <PreviewCard previewData={previewData} onFolderPathChange={handleFolderPathChange} />;
+        return <PreviewCard 
+          previewData={previewData} 
+          onFolderPathChange={handleFolderPathChange} 
+          files={files}
+        />;
       case 2:
         return <JsonEditor previewData={previewData} />;
       default:
@@ -124,14 +119,9 @@ const Index = () => {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-border">
         <div className="container py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold gradient-text">Yodl OG Card Crafter</h1>
+          <h1 className="text-2xl font-bold gradient-text">Preview Card Yapp</h1>
           <div className="flex items-center space-x-2">
             <WalletConnect />
-            <a href="https://github.com/yodl" target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="icon">
-                <Github />
-              </Button>
-            </a>
           </div>
         </div>
       </header>
@@ -164,21 +154,11 @@ const Index = () => {
             </Button>
             
             <div className="flex space-x-2">
-              {activeStep === 1 && (
-                <Button 
-                  variant="secondary" 
-                  onClick={handleUploadToGitHub}
-                  disabled={!previewData || !folderPath}
-                >
-                  Upload to GitHub
-                </Button>
-              )}
+              <Button onClick={handleNext} className="gap-2" disabled={activeStep === steps.length - 1}>
+                Next <ArrowRight className="h-4 w-4" />
+              </Button>
               
-              {activeStep < steps.length - 1 ? (
-                <Button onClick={handleNext} className="gap-2">
-                  Next <ArrowRight className="h-4 w-4" />
-                </Button>
-              ) : (
+              {activeStep === steps.length - 1 && (
                 <Button onClick={() => setActiveStep(0)} className="gap-2">
                   Start Over
                 </Button>
@@ -190,7 +170,7 @@ const Index = () => {
       
       <footer className="border-t border-border py-4">
         <div className="container text-center text-sm text-muted-foreground">
-          <p>Yodl OG Card Crafter - Customize your Yodl preview cards</p>
+          <p>Preview Card Yapp - Customize your Yodl preview cards</p>
         </div>
       </footer>
     </div>

@@ -1,9 +1,8 @@
-
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ImageFile } from "@/lib/types";
-import { LinkIcon, X, CheckCircle, ExternalLink } from "lucide-react";
+import { X, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 
@@ -23,9 +22,22 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
     outer: '',
     overlay: '',
   });
+  const [loading, setLoading] = useState<{ [key: string]: boolean }>({
+    inner: false,
+    outer: false,
+    overlay: false,
+  });
+  
+  // Debounce timer reference
+  const debounceTimers = React.useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   const validateImageUrl = useCallback((url: string, name: string): Promise<boolean> => {
     return new Promise((resolve) => {
+      if (!url.trim()) {
+        resolve(false);
+        return;
+      }
+      
       const img = new Image();
       img.onload = () => {
         resolve(true);
@@ -42,11 +54,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
     });
   }, [toast]);
 
-  const handleUrlChange = useCallback(async (name: 'inner' | 'outer' | 'overlay', url: string) => {
-    // Update the URL state
-    setUrls(prev => ({ ...prev, [name]: url }));
-    
-    if (!url) {
+  const loadImageUrl = useCallback(async (name: 'inner' | 'outer' | 'overlay', url: string) => {
+    if (!url.trim()) {
       // Clear the preview if URL is empty
       const updatedFiles = files.map(item => 
         item.name === name ? { ...item, file: null, preview: null } : item
@@ -56,23 +65,44 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
       return;
     }
 
-    // Validate the URL is an image
-    if (await validateImageUrl(url, name)) {
-      // Update the files state with the URL as preview
-      const updatedFiles = files.map(item => 
-        item.name === name ? { ...item, preview: url } : item
-      );
-      setFiles(updatedFiles);
-      onFilesChange(updatedFiles);
+    setLoading(prev => ({ ...prev, [name]: true }));
+    
+    try {
+      // Validate the URL is an image
+      if (await validateImageUrl(url, name)) {
+        // Update the files state with the URL as preview
+        const updatedFiles = files.map(item => 
+          item.name === name ? { ...item, preview: url } : item
+        );
+        setFiles(updatedFiles);
+        onFilesChange(updatedFiles);
+      }
+    } finally {
+      setLoading(prev => ({ ...prev, [name]: false }));
     }
   }, [files, onFilesChange, validateImageUrl]);
 
-  const handleApplyUrl = useCallback(async (name: 'inner' | 'outer' | 'overlay') => {
-    const url = urls[name];
-    if (url) {
-      await handleUrlChange(name, url);
+  const handleUrlChange = useCallback((name: 'inner' | 'outer' | 'overlay', url: string) => {
+    // Update the URL state
+    setUrls(prev => ({ ...prev, [name]: url }));
+    
+    // Clear any existing debounce timer for this field
+    if (debounceTimers.current[name]) {
+      clearTimeout(debounceTimers.current[name]);
     }
-  }, [urls, handleUrlChange]);
+    
+    // Set a new debounce timer (500ms)
+    debounceTimers.current[name] = setTimeout(() => {
+      loadImageUrl(name, url);
+    }, 500);
+  }, [loadImageUrl]);
+
+  // Clean up timers on component unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(timer => clearTimeout(timer));
+    };
+  }, []);
 
   const clearUrl = useCallback((name: 'inner' | 'outer' | 'overlay') => {
     setUrls(prev => ({ ...prev, [name]: '' }));
@@ -101,20 +131,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
             {!preview ? (
               <div className="space-y-4">
                 <div className="flex flex-col gap-2">
-                  <Input
-                    placeholder={`Enter ${name} image URL`}
-                    value={urls[name]}
-                    onChange={(e) => setUrls(prev => ({ ...prev, [name]: e.target.value }))}
-                    className="text-sm"
-                  />
-                  <Button 
-                    onClick={() => handleApplyUrl(name)}
-                    disabled={!urls[name]}
-                    className="w-full"
-                  >
-                    <LinkIcon className="h-4 w-4 mr-2" />
-                    Apply URL
-                  </Button>
+                  <div className="relative">
+                    <Input
+                      placeholder={`Paste ${name} image URL`}
+                      value={urls[name]}
+                      onChange={(e) => handleUrlChange(name, e.target.value)}
+                      className="text-sm pr-8"
+                    />
+                    {loading[name] && (
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
                   <p>Supported formats: PNG, JPG, WebP</p>
