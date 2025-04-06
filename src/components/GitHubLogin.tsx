@@ -182,7 +182,7 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
       <div className="flex space-x-2">
         <Button onClick={handleGitHubSignIn} className="gap-2">
           <Github className="h-4 w-4" />
-          GitHub Demo Mode
+          Sign in with GitHub
         </Button>
         <Button 
           variant="outline" 

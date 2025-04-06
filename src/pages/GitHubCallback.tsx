@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { GitHubAuthService } from '@/lib/githubAuthService';
 import { Loader2, AlertCircle, Info } from 'lucide-react';
 
 const GitHubCallback: React.FC = () => {
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [debugInfo, setDebugInfo] = useState<string>('');
   
   useEffect(() => {
+    // Parse the hash fragment to get the code
+    // HashRouter uses # fragment, so we need to extract parameters from the location
+    const searchParams = new URLSearchParams(location.search || location.hash.substring(location.hash.indexOf('?')));
     const code = searchParams.get('code');
     const error = searchParams.get('error');
     const authService = GitHubAuthService.getInstance();
@@ -49,17 +52,17 @@ const GitHubCallback: React.FC = () => {
         } else {
           console.error('GitHub auth failed - no success response');
           setStatus('error');
-          setErrorMessage('Failed to authenticate with GitHub');
+          setErrorMessage('Failed to authenticate with GitHub. You may need to use a personal access token instead.');
         }
       } catch (error) {
         console.error('Error handling GitHub callback:', error);
         setStatus('error');
-        setErrorMessage(error instanceof Error ? error.message : 'Unknown error occurred');
+        setErrorMessage(error instanceof Error ? error.message : 'Unknown error occurred during OAuth flow');
       }
     };
     
     handleCallback();
-  }, [searchParams, navigate]);
+  }, [location, navigate]);
   
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4">

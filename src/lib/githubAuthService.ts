@@ -20,15 +20,15 @@ export class GitHubAuthService {
   private get redirectUri(): string {
     // For production
     if (window.location.hostname === 'previewcard-yapp.lovable.app') {
-      return `https://previewcard-yapp.lovable.app/#/github/callback`;
+      return `${window.location.origin}/#/github/callback`;
     }
     // For GitHub Pages
     else if (window.location.hostname === 'beatsme-idk.github.io') {
-      return `https://beatsme-idk.github.io/previewcard-yapp/#/github/callback`;
+      return `${window.location.origin}/previewcard-yapp/#/github/callback`;
     }
     // For local development
     else {
-      return `${window.location.origin}${window.location.pathname.includes('previewcard-yapp') ? '/previewcard-yapp' : ''}/#/github/callback`;
+      return `${window.location.origin}/#/github/callback`;
     }
   }
 
@@ -65,112 +65,67 @@ export class GitHubAuthService {
     return this.user;
   }
 
-  /**
-   * Directly enters demo mode without GitHub OAuth
-   * Used when GitHub OAuth is not properly configured
-   */
-  public enableDemoMode(): void {
-    this.token = `gh_simulated_${Math.random().toString(36).substring(2)}`;
-    localStorage.setItem('github_token', this.token);
-    this.initOctokit();
-    
-    // Create a demo user
-    this.user = {
-      login: 'demo-user',
-      avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-      name: 'Demo User',
-      html_url: 'https://github.com/demo-user'
-    };
-    
-    console.log('Demo mode enabled with simulated user:', this.user);
-  }
-
   public signIn() {
-    // Since GitHub OAuth is failing, enter demo mode instead of redirecting
-    this.enableDemoMode();
-    
-    // Redirect to home page after short delay
-    setTimeout(() => {
-      window.location.href = window.location.origin + 
-        (window.location.pathname.includes('previewcard-yapp') ? '/previewcard-yapp/' : '/') + 
-        '#/';
-    }, 100);
-    
-    /* Original GitHub OAuth code - commented out until OAuth app is fixed
+    // Standard GitHub OAuth flow
     const authUrl = `https://github.com/login/oauth/authorize?client_id=${this.clientId}&redirect_uri=${encodeURIComponent(
       this.redirectUri
     )}&scope=repo`;
     
+    console.log('Redirecting to GitHub OAuth:', authUrl);
     window.location.href = authUrl;
-    */
   }
 
   public async handleCallback(code: string): Promise<boolean> {
     try {
       console.log('Handling GitHub callback with code:', code);
       
-      // In production, this would normally be handled by a backend server
-      // but for demo purposes, we'll try a client-side approach first
-
       // GitHub doesn't support client-side token exchange due to CORS,
-      // so we'll try to use a serverless function or fallback to simulation
+      // so we'll use a proxy or serverless function
+      // If the proxy fails, we can recommend using personal access token instead
       
-      // Use GitHub's device flow as a temporary workaround for demo
-      // In a production app, this should be handled server-side
-      this.token = `gh_${code}_${Date.now()}`;
-      localStorage.setItem('github_token', this.token);
-      this.initOctokit();
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/https://github.com/login/oauth/access_token';
       
-      console.log('Simulated token exchange successful.');
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          // client_secret should be kept on server, not client
+          // this is a limitation of this demo implementation
+          code: code,
+          redirect_uri: this.redirectUri
+        })
+      });
       
-      // Try to fetch user info to validate the token
-      const userInfo = await this.fetchUserInfo();
+      if (!response.ok) {
+        console.error('Failed to exchange code for token:', response.status, response.statusText);
+        return false;
+      }
       
-      if (userInfo) {
-        console.log('User info fetched successfully:', userInfo);
-        return true;
+      const data = await response.json();
+      
+      if (data.access_token) {
+        this.token = data.access_token;
+        localStorage.setItem('github_token', this.token);
+        this.initOctokit();
+        
+        // Fetch user info to validate the token
+        const userInfo = await this.fetchUserInfo();
+        return !!userInfo;
       } else {
-        console.warn('No user info retrieved, using test user data');
-        // Create a test user for demo purposes
-        this.user = {
-          login: 'demo-user',
-          avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-          html_url: 'https://github.com/octocat'
-        };
-        return true;
+        console.error('No access token in response:', data);
+        return false;
       }
     } catch (error) {
       console.error('Error handling OAuth callback:', error);
-      
-      // Fallback for testing when token exchange fails
-      this.token = `gh_simulated_${Math.random().toString(36).substring(2)}`;
-      localStorage.setItem('github_token', this.token);
-      this.initOctokit();
-      
-      // Create a test user for demo purposes
-      this.user = {
-        login: 'demo-user',
-        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-        html_url: 'https://github.com/octocat'
-      };
-      
-      return true;
+      return false;
     }
   }
 
   public async fetchUserInfo(): Promise<GitHubUser | null> {
-    // For demo tokens, return a simulated user
-    if (this.token?.startsWith('gh_simulated_') || this.token?.startsWith('gh_')) {
-      this.user = {
-        login: 'demo-user',
-        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-        name: 'Demo User',
-        html_url: 'https://github.com/octocat'
-      };
-      console.log('Using simulated GitHub user:', this.user);
-      return this.user;
-    }
-
     if (!this.octokit) {
       console.warn('No Octokit instance available - cannot fetch user info');
       return null;
@@ -189,16 +144,7 @@ export class GitHubAuthService {
       return this.user;
     } catch (error) {
       console.error('Error fetching user info from GitHub API:', error);
-      
-      // Create a fallback demo user
-      this.user = {
-        login: 'fallback-user',
-        avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
-        name: 'Fallback User',
-        html_url: 'https://github.com/octocat'
-      };
-      console.log('Using fallback GitHub user after API error:', this.user);
-      return this.user;
+      return null;
     }
   }
 
