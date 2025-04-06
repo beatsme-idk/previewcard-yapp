@@ -18,17 +18,21 @@ export class GitHubAuthService {
   
   // Set redirect URI based on current environment
   private get redirectUri(): string {
+    const baseUrl = window.location.origin;
+    
+    console.log('Current hostname:', window.location.hostname);
+    
     // For production
     if (window.location.hostname === 'previewcard-yapp.lovable.app') {
-      return `${window.location.origin}/#/github/callback`;
+      return `${baseUrl}/#/github/callback`;
     }
     // For GitHub Pages
     else if (window.location.hostname === 'beatsme-idk.github.io') {
-      return `${window.location.origin}/previewcard-yapp/#/github/callback`;
+      return `${baseUrl}/previewcard-yapp/#/github/callback`;
     }
     // For local development
     else {
-      return `${window.location.origin}/#/github/callback`;
+      return `${baseUrl}/#/github/callback`;
     }
   }
 
@@ -83,40 +87,65 @@ export class GitHubAuthService {
       // so we'll use a proxy or serverless function
       // If the proxy fails, we can recommend using personal access token instead
       
-      const proxyUrl = 'https://cors-anywhere.herokuapp.com/https://github.com/login/oauth/access_token';
+      // Try with multiple CORS proxies in case one fails
+      const proxyUrls = [
+        'https://cors-anywhere.herokuapp.com/https://github.com/login/oauth/access_token',
+        'https://corsproxy.io/?https://github.com/login/oauth/access_token'
+      ];
       
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: this.clientId,
-          // client_secret should be kept on server, not client
-          // this is a limitation of this demo implementation
-          code: code,
-          redirect_uri: this.redirectUri
-        })
-      });
+      let success = false;
+      let lastError = null;
       
-      if (!response.ok) {
-        console.error('Failed to exchange code for token:', response.status, response.statusText);
-        return false;
+      for (const proxyUrl of proxyUrls) {
+        try {
+          console.log(`Trying token exchange with proxy: ${proxyUrl}`);
+          
+          const response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              client_id: this.clientId,
+              // client_secret should be kept on server, not client
+              // this is a limitation of this demo implementation
+              code: code,
+              redirect_uri: this.redirectUri
+            })
+          });
+          
+          if (!response.ok) {
+            console.warn(`Proxy ${proxyUrl} failed with status:`, response.status, response.statusText);
+            continue;
+          }
+          
+          const data = await response.json();
+          
+          if (data.access_token) {
+            this.token = data.access_token;
+            localStorage.setItem('github_token', this.token);
+            this.initOctokit();
+            
+            // Fetch user info to validate the token
+            const userInfo = await this.fetchUserInfo();
+            if (userInfo) {
+              success = true;
+              break;
+            }
+          } else {
+            console.warn('No access token in response from proxy:', proxyUrl, data);
+          }
+        } catch (error) {
+          console.warn(`Error with proxy ${proxyUrl}:`, error);
+          lastError = error;
+        }
       }
       
-      const data = await response.json();
-      
-      if (data.access_token) {
-        this.token = data.access_token;
-        localStorage.setItem('github_token', this.token);
-        this.initOctokit();
-        
-        // Fetch user info to validate the token
-        const userInfo = await this.fetchUserInfo();
-        return !!userInfo;
+      if (success) {
+        return true;
       } else {
-        console.error('No access token in response:', data);
+        console.error('All proxies failed for token exchange. Last error:', lastError);
         return false;
       }
     } catch (error) {

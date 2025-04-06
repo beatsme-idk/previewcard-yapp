@@ -9,14 +9,34 @@ const GitHubCallback: React.FC = () => {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const [showTokenInput, setShowTokenInput] = useState<boolean>(false);
+  const [manualToken, setManualToken] = useState<string>('');
   
   useEffect(() => {
     // Parse the hash fragment to get the code
     // HashRouter uses # fragment, so we need to extract parameters from the location
-    const searchParams = new URLSearchParams(location.search || location.hash.substring(location.hash.indexOf('?')));
+    console.log('GitHub callback location:', location);
+    
+    // Extract the query string from the hash
+    const hashParts = location.hash.split('?');
+    const queryString = hashParts.length > 1 ? hashParts[1] : '';
+    console.log('Parsed query string from hash:', queryString);
+    
+    // If no query string in hash, try the search params directly
+    const searchParams = new URLSearchParams(queryString || location.search);
+    
     const code = searchParams.get('code');
     const error = searchParams.get('error');
     const authService = GitHubAuthService.getInstance();
+    
+    // Debug the URL parsing
+    console.log('URL parsing results:', { 
+      fullHash: location.hash,
+      search: location.search,
+      parsedQueryString: queryString,
+      code,
+      error
+    });
     
     const handleCallback = async () => {
       console.log('GitHub callback page loaded', { code, error });
@@ -105,27 +125,81 @@ const GitHubCallback: React.FC = () => {
                 <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4 text-left">
                   <p className="text-red-700 text-sm font-medium">Error details:</p>
                   <p className="text-red-600 text-sm">{errorMessage}</p>
+                  
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-700 text-xs">
+                    <p><strong>Note:</strong> This is likely a CORS issue with GitHub's token exchange. 
+                    You can try using a personal access token instead.</p>
+                  </div>
                 </div>
               )}
               
-              <div className="flex flex-col gap-2">
-                <button 
-                  className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"
-                  onClick={() => navigate('/')}
-                >
-                  Return to Home
-                </button>
-                <button
-                  className="w-full px-4 py-2 bg-muted text-muted-foreground rounded hover:bg-muted/90 flex items-center justify-center gap-2"
-                  onClick={() => {
-                    const authService = GitHubAuthService.getInstance();
-                    authService.signIn();
-                  }}
-                >
-                  <Info className="h-4 w-4" />
-                  Try Again
-                </button>
-              </div>
+              {!showTokenInput ? (
+                <div className="flex flex-col gap-2">
+                  <button 
+                    className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                    onClick={() => setShowTokenInput(true)}
+                  >
+                    Use Personal Access Token Instead
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 px-4 py-2 bg-muted text-muted-foreground rounded hover:bg-muted/90 flex items-center justify-center gap-2"
+                      onClick={() => {
+                        const authService = GitHubAuthService.getInstance();
+                        authService.signIn();
+                      }}
+                    >
+                      <Info className="h-4 w-4" />
+                      Try Again
+                    </button>
+                    <button 
+                      className="flex-1 px-4 py-2 bg-muted text-muted-foreground rounded hover:bg-muted/90"
+                      onClick={() => navigate('/')}
+                    >
+                      Return Home
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      GitHub Personal Access Token:
+                    </label>
+                    <input
+                      type="password"
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="ghp_..."
+                      value={manualToken}
+                      onChange={(e) => setManualToken(e.target.value)}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Token needs 'repo' scope permissions
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                      onClick={() => {
+                        if (manualToken) {
+                          const authService = GitHubAuthService.getInstance();
+                          authService.setManualToken(manualToken);
+                          navigate('/');
+                        }
+                      }}
+                      disabled={!manualToken}
+                    >
+                      Connect with Token
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-muted text-muted-foreground rounded hover:bg-muted/90"
+                      onClick={() => setShowTokenInput(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
