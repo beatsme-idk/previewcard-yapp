@@ -94,8 +94,20 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
       const deviceAuth = await authService.signIn();
       
       if (deviceAuth) {
-        setDeviceAuthData(deviceAuth);
-        startPolling();
+        // Check if this is a CORS error response
+        if (deviceAuth.userCode === 'CORS-ERROR') {
+          // Show the token dialog instead of device flow
+          setShowManualTokenDialog(true);
+          toast({
+            title: "Browser Restriction",
+            description: "GitHub API has CORS restrictions. Please use a personal access token instead.",
+            variant: "default",
+          });
+        } else {
+          // Normal device flow
+          setDeviceAuthData(deviceAuth);
+          startPolling();
+        }
       } else {
         toast({
           title: "Authentication Error",
@@ -267,20 +279,31 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
           Sign in with GitHub
         </Button>
         <Button 
-          variant="outline" 
+          variant="default" 
           onClick={() => setShowManualTokenDialog(true)}
           className="text-xs"
         >
-          Use Token
+          Use Personal Access Token
         </Button>
       </div>
       
+      <Alert className="mt-4 bg-blue-50 border-blue-200">
+        <InfoIcon className="h-4 w-4 text-blue-500" />
+        <AlertTitle className="text-blue-800">GitHub Authentication</AlertTitle>
+        <AlertDescription className="text-blue-700 text-sm">
+          <p>For the best experience, use a personal access token (PAT) for authentication.</p>
+          <p className="mt-1">1. Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">GitHub token settings</a></p>
+          <p>2. Create a token with "repo" scope</p>
+          <p>3. Copy the token and paste it in the token field</p>
+        </AlertDescription>
+      </Alert>
+
       <Dialog open={showManualTokenDialog} onOpenChange={setShowManualTokenDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Connect with Personal Access Token</DialogTitle>
+            <DialogTitle>Connect with GitHub Personal Access Token</DialogTitle>
             <DialogDescription>
-              Enter your GitHub Personal Access Token with repo access
+              You'll need a GitHub token with 'repo' scope to connect your account
             </DialogDescription>
           </DialogHeader>
           
@@ -294,11 +317,26 @@ const GitHubLogin: React.FC<GitHubLoginProps> = ({ onAuthChange }) => {
                 value={manualToken}
                 onChange={(e) => setManualToken(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Tokens typically start with 'ghp_' and are 40 characters long
+              </p>
             </div>
             
-            <div className="flex items-center text-sm text-amber-500 bg-amber-500/10 p-2 rounded-md">
-              <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-              <p>Ensure your token has permission to write to repositories.</p>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">How to create a token:</p>
+              <ol className="text-sm space-y-2 list-decimal pl-5">
+                <li>Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-primary underline">GitHub token settings</a></li>
+                <li>Click "Generate new token" (classic)</li>
+                <li>Add a note (e.g., "Preview Card App")</li>
+                <li>Select the <strong>repo</strong> scope</li>
+                <li>Click "Generate token" at the bottom</li>
+                <li>Copy the token and paste it above</li>
+              </ol>
+            </div>
+            
+            <div className="flex items-center text-sm bg-amber-50 text-amber-800 border border-amber-200 p-2 rounded-md">
+              <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0 text-amber-500" />
+              <p>This token is only stored in your browser's local storage and is never sent to our servers.</p>
             </div>
           </div>
           

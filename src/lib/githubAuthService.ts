@@ -60,36 +60,52 @@ export class GitHubAuthService {
   // Start GitHub Device Flow authentication
   public async signIn(): Promise<{ userCode: string; verificationUri: string } | null> {
     try {
-      // Step 1: Request device and user codes
-      const response = await fetch('https://github.com/login/device/code', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: this.clientId,
-          scope: 'repo' // Request access to repositories
-        })
-      });
-
-      if (!response.ok) {
-        console.error('Failed to start device flow:', response.status);
-        return null;
-      }
-
-      const data = await response.json() as DeviceCodeResponse;
-      console.log('Device flow started:', data);
-
-      // Store device code in session storage (will be used for polling)
-      sessionStorage.setItem('github_device_code', data.device_code);
-      sessionStorage.setItem('github_device_interval', data.interval.toString());
+      console.log('Starting GitHub device flow with CORS considerations...');
       
-      // Return the user code and verification URI to display to the user
-      return {
-        userCode: data.user_code,
-        verificationUri: data.verification_uri
-      };
+      // GitHub's API doesn't support CORS for browser-based apps
+      // We'll use mode: 'no-cors' which will give us an opaque response
+      // This means we won't be able to read the response, but it's our only option
+      // In production, this should be handled by a backend API
+      
+      const requestUrl = 'https://github.com/login/device/code';
+      console.log(`Attempting device code request to ${requestUrl}`);
+      
+      try {
+        // First try with regular CORS to see if it works in some environments
+        const response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: this.clientId,
+            scope: 'repo'
+          })
+        });
+        
+        // If we get here, CORS actually worked (unlikely in most environments)
+        const data = await response.json() as DeviceCodeResponse;
+        console.log('Device flow started successfully:', data);
+        
+        sessionStorage.setItem('github_device_code', data.device_code);
+        sessionStorage.setItem('github_device_interval', data.interval.toString());
+        
+        return {
+          userCode: data.user_code,
+          verificationUri: data.verification_uri
+        };
+      } catch (corsError) {
+        // CORS error expected - inform the user that only token authentication will work
+        console.error('CORS error with device flow (expected):', corsError);
+        
+        // Return a mock device flow response that will guide the user
+        // to use a personal access token instead
+        return {
+          userCode: 'CORS-ERROR',
+          verificationUri: 'https://github.com/settings/tokens'
+        };
+      }
     } catch (error) {
       console.error('Error starting device flow:', error);
       return null;
