@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ENSService } from '@/lib/ensService';
 import { useAccount } from 'wagmi';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import useWalletProvider from '@/hooks/useWalletProvider';
 
 interface JsonEditorProps {
   previewData: PreviewData | null;
@@ -17,6 +18,8 @@ interface JsonEditorProps {
 const JsonEditor: React.FC<JsonEditorProps> = ({ previewData }) => {
   const { toast } = useToast();
   const { address, isConnected } = useAccount();
+  const walletProvider = useWalletProvider();
+  
   const [ensRecord, setEnsRecord] = useState<ENSRecord>({
     tokenSymbols: ["USDT", "USDC"],
   });
@@ -29,7 +32,13 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ previewData }) => {
   const [parsedCurrentRecord, setParsedCurrentRecord] = useState<any>(null);
   const [fetchingRecords, setFetchingRecords] = useState(false);
   
-  const [ensService] = useState(() => new ENSService());
+  const [ensService] = useState(() => new ENSService(walletProvider));
+  
+  useEffect(() => {
+    if (walletProvider) {
+      ensService.updateProvider(walletProvider);
+    }
+  }, [walletProvider, ensService]);
 
   // Update JSON when previewData changes but preserve existing fields
   useEffect(() => {

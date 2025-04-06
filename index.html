@@ -16,23 +16,10 @@
     <meta name="twitter:site" content="@lovable_dev" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
     
-    <!-- Fix for wallet injection issues -->
+    <!-- Wallet provider compatibility script -->
     <script>
-      // Ensure window.ethereum is writable
-      if (typeof window !== 'undefined') {
-        try {
-          const descriptor = Object.getOwnPropertyDescriptor(window, 'ethereum');
-          if (descriptor && descriptor.get && !descriptor.set) {
-            Object.defineProperty(window, 'ethereum', {
-              configurable: true,
-              writable: true,
-              value: descriptor.get()
-            });
-          }
-        } catch (e) {
-          console.warn('Failed to prepare ethereum provider:', e);
-        }
-      }
+      // Create a reference object that will be used as a proxy for wallet providers
+      window.__walletProviders = {};
     </script>
   </head>
 

@@ -6,21 +6,47 @@ import { config, queryClient } from './lib/rainbowkit'
 import App from './App.tsx'
 import './index.css'
 
-// Prevent ethereum provider conflicts
-// This prevents "Cannot set property ethereum of #<Window> which has only a getter" errors
+// Add type declarations for our custom window properties
+declare global {
+  interface Window {
+    __walletProviders: {
+      ethereum?: any;
+      updateProvider?: (provider: any) => void;
+    };
+  }
+}
+
+// Handle wallet provider conflicts
 if (typeof window !== 'undefined') {
-  // If ethereum is already defined with a getter but no setter
-  const descriptor = Object.getOwnPropertyDescriptor(window, 'ethereum');
-  if (descriptor && descriptor.get && !descriptor.set) {
-    // Create a new property with the current value but make it writable
-    const ethereumValue = window.ethereum;
-    Object.defineProperty(window, 'ethereum', {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: ethereumValue
-    });
-    console.log('Fixed ethereum provider for compatibility');
+  // Initialize the wallet providers object if it doesn't exist
+  if (!window.__walletProviders) {
+    window.__walletProviders = {};
+  }
+  
+  try {
+    // Add a compatibility layer for wallet providers
+    // Instead of modifying window.ethereum directly (which can cause errors),
+    // we'll track the provider in our reference object
+    const ethereumDescriptor = Object.getOwnPropertyDescriptor(window, 'ethereum');
+    if (ethereumDescriptor && ethereumDescriptor.get) {
+      // Store current ethereum provider reference
+      try {
+        window.__walletProviders.ethereum = ethereumDescriptor.get();
+      } catch (e) {
+        console.warn('Could not access ethereum provider:', e);
+      }
+      
+      // Setup provider update method
+      Object.defineProperty(window.__walletProviders, 'updateProvider', {
+        value: function(provider) {
+          window.__walletProviders.ethereum = provider;
+        },
+        writable: false,
+        configurable: false
+      });
+    }
+  } catch (e) {
+    console.warn('Error setting up wallet compatibility layer:', e);
   }
 }
 

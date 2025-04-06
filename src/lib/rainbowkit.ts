@@ -7,7 +7,7 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient();
 
 export const config = getDefaultConfig({
-  appName: 'OG Card Crafter',
+  appName: 'Preview Card Yapp',
   projectId: '362b839f0569ebd7db49535549783fcd',
   chains: [mainnet],
   transports: {

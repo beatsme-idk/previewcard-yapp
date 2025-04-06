@@ -1,6 +1,16 @@
 import { ethers } from 'ethers';
 import { ENSRecord } from './types';
 
+// Add window.__walletProviders type declaration
+declare global {
+  interface Window {
+    __walletProviders: {
+      ethereum?: any;
+      updateProvider?: (provider: any) => void;
+    };
+  }
+}
+
 export const ENS_RESOLVER_ABI = [
   'function setText(bytes32 node, string key, string value) external',
   'function text(bytes32 node, string key) external view returns (string)',
@@ -10,16 +20,55 @@ export class ENSService {
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
   
-  constructor() {
+  constructor(ethereumProvider?: any) {
     try {
-      if (typeof window !== 'undefined' && window.ethereum) {
-        this.provider = new ethers.BrowserProvider(window.ethereum);
+      if (ethereumProvider) {
+        // Use the provided ethereum provider
+        this.provider = new ethers.BrowserProvider(ethereumProvider);
+      } else if (typeof window !== 'undefined') {
+        // Try to get provider from our custom container first
+        if (window.__walletProviders?.ethereum) {
+          this.provider = new ethers.BrowserProvider(window.__walletProviders.ethereum);
+        } 
+        // As a fallback, try window.ethereum but with try/catch
+        else {
+          try {
+            const ethereum = window.ethereum;
+            if (ethereum) {
+              this.provider = new ethers.BrowserProvider(ethereum);
+              // Store for future reference
+              if (window.__walletProviders) {
+                window.__walletProviders.ethereum = ethereum;
+              }
+            } else {
+              console.warn('No ethereum provider available');
+            }
+          } catch (e) {
+            console.warn('Error accessing ethereum provider:', e);
+          }
+        }
       } else {
         console.warn('No ethereum provider available');
       }
     } catch (error) {
       console.error('Error initializing provider:', error);
     }
+  }
+  
+  // Method to update the provider if it becomes available later
+  updateProvider(ethereumProvider: any) {
+    if (ethereumProvider) {
+      try {
+        this.provider = new ethers.BrowserProvider(ethereumProvider);
+        // Reset signer since provider changed
+        this.signer = null;
+        return true;
+      } catch (error) {
+        console.error('Error updating provider:', error);
+        return false;
+      }
+    }
+    return false;
   }
   
   async connectSigner() {
