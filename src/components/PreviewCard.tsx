@@ -139,7 +139,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     setIsAuthenticated(authenticated);
   };
 
-  const handleUploadToGitHub = () => {
+  const handleUploadToGitHub = async () => {
     // Check if all required files are present
     const missingFiles = ['inner', 'outer', 'overlay'].filter(
       name => !files.some(f => f.name === name && f.preview)
@@ -158,13 +158,38 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     if (!folderPath.username || !folderPath.repo) {
       toast({
         title: "Missing repository details",
-        description: "Please provide GitHub username and repository name",
+        description: "Please select GitHub username and repository name",
         variant: "destructive"
       });
       return;
     }
+    
+    // *** Explicitly check repository visibility before showing confirmation ***
+    try {
+      const repoInfo = await githubService.getRepositoryInfo(folderPath.username, folderPath.repo);
+      if (repoInfo && repoInfo.private) {
+         setShowVisibilityWarning(true); // Ensure warning is visible
+         toast({
+           title: "Cannot Upload to Private Repository",
+           description: "Assets must be uploaded to a PUBLIC repository to be accessible via CDN. Please select or create a public repository.",
+           variant: "destructive",
+           duration: 5000, // Make it more visible
+         });
+         return; // Stop before showing confirmation
+       } else {
+         setShowVisibilityWarning(false); // Ensure warning is hidden if public
+       }
+    } catch (error) {
+      console.error("Error checking repository visibility before upload:", error);
+      toast({
+        title: "Repository Check Failed",
+        description: "Could not verify if the selected repository is public. Please try again.",
+        variant: "destructive"
+      });
+      return; // Stop if check fails
+    }
 
-    // Show confirmation dialog
+    // Show confirmation dialog only if all checks pass
     setConfirmUploadDialog(true);
   };
 

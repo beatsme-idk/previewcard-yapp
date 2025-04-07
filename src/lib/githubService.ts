@@ -200,6 +200,8 @@ export class GitHubService {
 
     const results = [];
     const baseFolder = `og/${folderPath.folder}`;
+    const repoFullName = `${folderPath.username}/${folderPath.repo}`;
+    console.log(`Starting upload to repository: ${repoFullName}, base folder: ${baseFolder}`); // Log repo and base folder
 
     for (const file of files) {
       if (!file.preview) continue;
@@ -207,19 +209,22 @@ export class GitHubService {
       try {
         // Extract base64 content from data URL
         const base64Content = file.preview.split(',')[1];
+        const targetPath = `${baseFolder}/${file.name}.png`; // Log this path
+        console.log(`Attempting to upload ${file.name} to path: ${targetPath}`);
         
         const result = await this.uploadFile({
           owner: folderPath.username,
           repo: folderPath.repo,
-          path: `${baseFolder}/${file.name}.png`,
+          path: targetPath,
           content: base64Content,
           message: `Upload ${file.name}.png for OG card preview`,
         });
         
+        console.log(`Successfully uploaded ${file.name} to ${result.content?.html_url}`); // Log success URL
         results.push(result);
       } catch (error) {
-        console.error(`Error uploading ${file.name}.png:`, error);
-        throw error;
+        console.error(`Error uploading ${file.name}.png to ${repoFullName}/${baseFolder}:`, error);
+        throw error; // Re-throw to ensure overall failure is reported
       }
     }
     
@@ -228,9 +233,11 @@ export class GitHubService {
       this.rateLimitService.updateRateLimits(this.octokit).catch(console.error);
     }
 
+    const finalBaseUrl = `https://cdn.jsdelivr.net/gh/${repoFullName}/${baseFolder}`;
+    console.log(`Upload process completed. Base URL: ${finalBaseUrl}`); // Log final URL structure
     return {
       success: true,
-      baseUrl: `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/${baseFolder}`,
+      baseUrl: finalBaseUrl,
       results,
     };
   }
