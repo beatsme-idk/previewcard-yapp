@@ -6,11 +6,25 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, CheckCircle, AlertCircle, ExternalLink, RefreshCw, Info, Link } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, ExternalLink, RefreshCw, Info } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { Address, Hash, namehash } from 'viem';
+import { Address, Hash, namehash, getAddress } from 'viem';
 import { normalize } from 'viem/ens';
 import { PreviewData } from '@/lib/types';
+
+// Read ABI for the ENS Public Resolver
+const ensResolverReadAbi = [
+  {
+    inputs: [
+      { internalType: 'bytes32', name: 'node', type: 'bytes32' },
+      { internalType: 'string', name: 'key', type: 'string' },
+    ],
+    name: 'text',
+    outputs: [{ internalType: 'string', name: '', type: 'string' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
 
 // Write ABI for the ENS Public Resolver
 const ensResolverWriteAbi = [
@@ -27,41 +41,11 @@ const ensResolverWriteAbi = [
   },
 ] as const;
 
-// Justaname API endpoint
-const JUSTANAME_API = 'https://api.justaname.id/ens/v1/subname/records';
-const PROVIDER_URL = 'https://cloudflare-eth.com';
+// Known resolvers for Yodl domains
+const YODL_RESOLVER = '0xdba48394d77ed167f4e8d49850bd3c216c2c95df'; // Yodl Resolver
 
 interface EnsUpdaterProps {
   previewData: PreviewData | null;
-}
-
-interface JustanameResponse {
-  statusCode: number;
-  result: {
-    data: {
-      ens: string;
-      isClaimed: boolean;
-      claimedAt: string;
-      isJAN: boolean;
-      records: {
-        resolverAddress: string;
-        texts: Array<{
-          key: string;
-          value: string;
-        }>;
-        coins: Array<{
-          id: number;
-          name: string;
-          value: string;
-        }>;
-        contentHash?: {
-          protocolType: string;
-          decoded: string;
-        };
-      };
-    };
-    error?: string;
-  };
 }
 
 const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
@@ -73,10 +57,27 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
   const [resolverAddress, setResolverAddress] = useState<Address | null>(null);
   const [resolverError, setResolverError] = useState<string | null>(null);
   const [existingData, setExistingData] = useState<string>('');
-  const [isLoadingData, setIsLoadingData] = useState(false);
   const [nodeHash, setNodeHash] = useState<`0x${string}` | null>(null);
   
   const previewUrl = previewData?.baseUrl || '';
+
+  // For reading records
+  const { 
+    data: existingRecord, 
+    error: readError,
+    refetch: refetchRecord,
+    isFetching: isFetchingRecord,
+    isError: isReadError
+  } = useReadContract({
+    address: resolverAddress as Address | undefined,
+    abi: ensResolverReadAbi,
+    functionName: 'text',
+    args: resolverAddress && nodeHash ? [nodeHash, recordKey] : undefined,
+    chainId: mainnet.id,
+    query: {
+      enabled: !!resolverAddress && !!nodeHash,
+    },
+  });
 
   // For writing records
   const {
@@ -92,8 +93,25 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     error: confirmationError,
   } = useWaitForTransactionReceipt({ hash });
 
-  // Function to fetch ENS records using Justaname API
-  const fetchEnsRecords = async (name: string) => {
+  // Update existingData when record is fetched
+  useEffect(() => {
+    if (existingRecord && typeof existingRecord === 'string') {
+      try {
+        const trimmed = existingRecord.trim();
+        setExistingData(trimmed);
+        console.log(`Loaded existing record: ${trimmed}`);
+      } catch (err) {
+        console.error('Error parsing existing record:', err);
+        setExistingData(existingRecord);
+      }
+    } else if (isReadError) {
+      console.log('No existing record found or error reading record');
+      setExistingData('');
+    }
+  }, [existingRecord, isReadError]);
+
+  // Function to process ENS names
+  const processEnsName = async (name: string) => {
     if (!name) return;
     
     setIsLoadingResolver(true);
@@ -103,60 +121,41 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     setExistingData('');
     
     try {
-      console.log(`Fetching records for ENS name: ${name} via Justaname API`);
+      console.log(`Processing ENS name: ${name}`);
       
-      // Calculate the namehash (still needed for setText)
+      // Normalize the name and generate namehash
       const normalizedName = normalize(name);
       const node = namehash(normalizedName);
       console.log(`Generated namehash: ${node}`);
       setNodeHash(node);
       
-      // Fetch records from Justaname API
-      const apiUrl = `${JUSTANAME_API}?ens=${encodeURIComponent(name)}&providerUrl=${encodeURIComponent(PROVIDER_URL)}`;
-      console.log(`Calling API: ${apiUrl}`);
+      // Check if it's a Yodl domain
+      const isYodlDomain = name.endsWith('.yodl.eth') || name.endsWith('.yodl') || name.includes('.yod');
       
-      const response = await fetch(apiUrl);
-      
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}: ${response.statusText}`);
-      }
-      
-      const data: JustanameResponse = await response.json();
-      console.log('Justaname API response:', data);
-      
-      if (data.statusCode !== 200 || data.result.error) {
-        throw new Error(data.result.error || 'Failed to fetch records');
-      }
-      
-      // Set resolver address
-      const resolver = data.result.data.records.resolverAddress as `0x${string}`;
-      console.log(`Found resolver: ${resolver}`);
-      setResolverAddress(resolver);
-      
-      // Look for me.yodl record
-      const meYodlRecord = data.result.data.records.texts?.find(text => text.key === recordKey);
-      
-      if (meYodlRecord) {
-        console.log(`Found ${recordKey} record:`, meYodlRecord.value);
-        setExistingData(meYodlRecord.value);
+      if (isYodlDomain) {
+        console.log('Detected Yodl domain, using Yodl resolver');
+        const yodlResolver = getAddress(YODL_RESOLVER);
+        setResolverAddress(yodlResolver);
       } else {
-        console.log(`No ${recordKey} record found.`);
-        setExistingData('');
+        // For other domains, try a generic approach
+        console.log('Not a Yodl domain, using ENS Public Resolver');
+        // Use a default public resolver
+        const ensResolver = getAddress('0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63');
+        setResolverAddress(ensResolver);
       }
-      
     } catch (err: any) {
-      console.error('Error fetching ENS records:', err);
-      setResolverError(err.message || 'Failed to fetch ENS records. Make sure the name exists.');
+      console.error('Error processing ENS name:', err);
+      setResolverError(err.message || 'Failed to process ENS name. Ensure the name is valid.');
     } finally {
       setIsLoadingResolver(false);
     }
   };
 
-  // Debounce fetching resolver
+  // Debounce processing ENS name
   useEffect(() => {
     const handler = setTimeout(() => {
       if (ensName.includes('.')) { // Basic validation
-          fetchEnsRecords(ensName);
+          processEnsName(ensName);
       } else {
           setResolverAddress(null);
           setNodeHash(null);
@@ -172,8 +171,8 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
   
   // Refresh the existing record data
   const handleRefreshExistingData = () => {
-    if (ensName) {
-      fetchEnsRecords(ensName);
+    if (ensName && resolverAddress && nodeHash) {
+      refetchRecord();
     }
   };
 
@@ -344,7 +343,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
               <Label htmlFor="ensName">ENS Name</Label>
               <Input
                 id="ensName"
-                placeholder="yourname.eth or yourname.justaname.eth"
+                placeholder="yourname.eth or name.yodl.eth"
                 value={ensName}
                 onChange={(e) => setEnsName(e.target.value)}
                 disabled={isWritePending || isConfirming}
@@ -354,7 +353,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 {resolverAddress ? (
                   <p className="text-sm text-green-600 flex items-center">
                     <CheckCircle className="h-3 w-3 mr-1" />
-                    Records found for {ensName}
+                    Resolver found for {ensName}
                   </p>
                 ) : resolverError ? (
                   <p className="text-sm text-destructive flex items-center">
@@ -375,10 +374,10 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                     variant="ghost" 
                     size="sm" 
                     onClick={handleRefreshExistingData}
-                    disabled={isLoadingResolver}
+                    disabled={isFetchingRecord || isLoadingResolver}
                     className="h-6 px-2 text-xs"
                   >
-                    {isLoadingResolver ? (
+                    {(isFetchingRecord || isLoadingResolver) ? (
                       <Loader2 className="h-3 w-3 animate-spin mr-1" />
                     ) : (
                       <RefreshCw className="h-3 w-3 mr-1" />
@@ -404,7 +403,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 <div 
                   className="font-mono text-xs p-3 bg-muted rounded-md overflow-auto max-h-32"
                 >
-                  {isLoadingResolver ? (
+                  {isFetchingRecord || isLoadingResolver ? (
                     <div className="flex items-center justify-center py-2">
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       Loading data...
@@ -454,9 +453,14 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
               </div>
             </div>
 
-            <div className="flex items-center text-xs text-muted-foreground">
-              <Link className="h-3 w-3 mr-1" />
-              <span>Data fetched via <a href="https://justaname.id" target="_blank" rel="noopener noreferrer" className="underline">Justaname API</a></span>
+            <div className="mt-1">
+              <Alert variant="default" className="bg-amber-50 border-amber-200">
+                <Info className="h-4 w-4 text-amber-500" />
+                <AlertTitle>For Yodl Names</AlertTitle>
+                <AlertDescription className="text-xs">
+                  Works with yourname.yodl.eth domains. You must own the domain to update its record.
+                </AlertDescription>
+              </Alert>
             </div>
           </>
         )}
@@ -472,7 +476,8 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
             !nodeHash || 
             isWritePending || 
             isConfirming || 
-            isLoadingResolver
+            isLoadingResolver || 
+            isFetchingRecord
           }
         >
           {isWritePending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
