@@ -60,9 +60,10 @@ jobs:
           echo "dist directory exists"
           ls -la ./dist
       
-      - name: Upload artifact for deployment
-        uses: actions/upload-pages-artifact@v1
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
+          name: dist
           path: ./dist
 
   deploy:
