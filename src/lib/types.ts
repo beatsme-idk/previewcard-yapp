@@ -1,4 +1,3 @@
-
 // Step types
 export type Step = {
   id: string;
@@ -10,7 +9,7 @@ export type Step = {
 export type ImageFile = {
   name: 'inner' | 'outer' | 'overlay';
   file: File | null;
-  preview: string | null;
+  preview: string | null; // Base64 data URL or null
 };
 
 // Preview types
