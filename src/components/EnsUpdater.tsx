@@ -6,26 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, CheckCircle, AlertCircle, ExternalLink, RefreshCw, Info } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, ExternalLink, RefreshCw, Info, Link } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { zeroAddress, Address, Hash, namehash, getAddress } from 'viem';
+import { Address, Hash, namehash } from 'viem';
 import { normalize } from 'viem/ens';
-import { config } from '@/lib/rainbowkit';
 import { PreviewData } from '@/lib/types';
-
-// Read ABI for the ENS Public Resolver
-const ensResolverReadAbi = [
-  {
-    inputs: [
-      { internalType: 'bytes32', name: 'node', type: 'bytes32' },
-      { internalType: 'string', name: 'key', type: 'string' },
-    ],
-    name: 'text',
-    outputs: [{ internalType: 'string', name: '', type: 'string' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
 
 // Write ABI for the ENS Public Resolver
 const ensResolverWriteAbi = [
@@ -42,15 +27,41 @@ const ensResolverWriteAbi = [
   },
 ] as const;
 
-// Well-known ENS public resolver addresses
-const KNOWN_RESOLVERS = [
-  '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63', // ENS Public Resolver
-  '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41', // ENS Public Resolver (old)
-  '0xdba48394d77ed167f4e8d49850bd3c216c2c95df', // Yodl Resolver
-];
+// Justaname API endpoint
+const JUSTANAME_API = 'https://api.justaname.id/ens/v1/subname/records';
+const PROVIDER_URL = 'https://cloudflare-eth.com';
 
 interface EnsUpdaterProps {
   previewData: PreviewData | null;
+}
+
+interface JustanameResponse {
+  statusCode: number;
+  result: {
+    data: {
+      ens: string;
+      isClaimed: boolean;
+      claimedAt: string;
+      isJAN: boolean;
+      records: {
+        resolverAddress: string;
+        texts: Array<{
+          key: string;
+          value: string;
+        }>;
+        coins: Array<{
+          id: number;
+          name: string;
+          value: string;
+        }>;
+        contentHash?: {
+          protocolType: string;
+          decoded: string;
+        };
+      };
+    };
+    error?: string;
+  };
 }
 
 const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
@@ -75,31 +86,14 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     writeContract,
   } = useWriteContract();
 
-  // For reading records
-  const { 
-    data: existingRecord, 
-    error: readError,
-    refetch: refetchRecord,
-    isFetching: isFetchingRecord
-  } = useReadContract({
-    address: resolverAddress as Address | undefined,
-    abi: ensResolverReadAbi,
-    functionName: 'text',
-    args: resolverAddress && nodeHash ? [nodeHash, recordKey] : undefined,
-    chainId: mainnet.id,
-    query: {
-      enabled: !!resolverAddress && !!nodeHash,
-    },
-  });
-
   const {
     isLoading: isConfirming,
     isSuccess: isConfirmed,
     error: confirmationError,
   } = useWaitForTransactionReceipt({ hash });
 
-  // Function to fetch resolver address
-  const fetchResolver = async (name: string) => {
+  // Function to fetch ENS records using Justaname API
+  const fetchEnsRecords = async (name: string) => {
     if (!name) return;
     
     setIsLoadingResolver(true);
@@ -109,71 +103,52 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     setExistingData('');
     
     try {
-      // Normalize the name and get the namehash
+      console.log(`Fetching records for ENS name: ${name} via Justaname API`);
+      
+      // Calculate the namehash (still needed for setText)
       const normalizedName = normalize(name);
-      
-      console.log(`Processing ENS name: ${normalizedName}`);
-      
-      // Calculate the namehash correctly using viem's namehash function
       const node = namehash(normalizedName);
       console.log(`Generated namehash: ${node}`);
-      
-      // Store the hash for later use
       setNodeHash(node);
       
-      // Get resolver from chain lookup
-      for (const knownResolver of KNOWN_RESOLVERS) {
-        try {
-          console.log(`Checking resolver: ${knownResolver}`);
-          
-          // Use a checksummed address
-          const checksummedAddress = getAddress(knownResolver);
-          
-          // Make sure the resolver has text capabilities
-          const hasText = await checkResolverHasText(checksummedAddress, node);
-          
-          if (hasText) {
-            console.log(`Found working resolver: ${checksummedAddress}`);
-            setResolverAddress(checksummedAddress);
-            return;
-          }
-        } catch (err) {
-          console.log(`Resolver ${knownResolver} check failed`);
-        }
+      // Fetch records from Justaname API
+      const apiUrl = `${JUSTANAME_API}?ens=${encodeURIComponent(name)}&providerUrl=${encodeURIComponent(PROVIDER_URL)}`;
+      console.log(`Calling API: ${apiUrl}`);
+      
+      const response = await fetch(apiUrl);
+      
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
       }
       
-      // If we get here, no resolver was found
-      throw new Error('No working resolver found. Make sure you own this ENS name.');
+      const data: JustanameResponse = await response.json();
+      console.log('Justaname API response:', data);
+      
+      if (data.statusCode !== 200 || data.result.error) {
+        throw new Error(data.result.error || 'Failed to fetch records');
+      }
+      
+      // Set resolver address
+      const resolver = data.result.data.records.resolverAddress as `0x${string}`;
+      console.log(`Found resolver: ${resolver}`);
+      setResolverAddress(resolver);
+      
+      // Look for me.yodl record
+      const meYodlRecord = data.result.data.records.texts?.find(text => text.key === recordKey);
+      
+      if (meYodlRecord) {
+        console.log(`Found ${recordKey} record:`, meYodlRecord.value);
+        setExistingData(meYodlRecord.value);
+      } else {
+        console.log(`No ${recordKey} record found.`);
+        setExistingData('');
+      }
+      
     } catch (err: any) {
-      console.error('Error processing ENS name:', err);
-      setResolverError(err.message || 'Failed to find resolver. Ensure the name is correct and registered.');
+      console.error('Error fetching ENS records:', err);
+      setResolverError(err.message || 'Failed to fetch ENS records. Make sure the name exists.');
     } finally {
       setIsLoadingResolver(false);
-    }
-  };
-  
-  // Helper function to check if a resolver supports the text method
-  const checkResolverHasText = async (resolverAddress: Address, node: `0x${string}`): Promise<boolean> => {
-    try {
-      const result = await fetch(`https://eth-mainnet.g.alchemy.com/v2/demo/checkResolverRecord`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_call',
-          params: [{
-            to: resolverAddress,
-            data: `0x59d1d43c${node.substring(2).padStart(64, '0')}${Buffer.from('me.yodl').toString('hex').padStart(64, '0')}`
-          }, 'latest']
-        })
-      }).then(r => r.json());
-      
-      // If we get a valid response, the resolver supports text records
-      return !!result?.result && result.result !== '0x';
-    } catch (err) {
-      console.error('Error checking resolver text support:', err);
-      return false;
     }
   };
 
@@ -181,7 +156,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
   useEffect(() => {
     const handler = setTimeout(() => {
       if (ensName.includes('.')) { // Basic validation
-          fetchResolver(ensName);
+          fetchEnsRecords(ensName);
       } else {
           setResolverAddress(null);
           setNodeHash(null);
@@ -195,26 +170,10 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     };
   }, [ensName]);
   
-  // When resolver and nodeHash are set, load existing data
-  useEffect(() => {
-    if (existingRecord && typeof existingRecord === 'string') {
-      try {
-        const trimmed = existingRecord.trim();
-        // Set raw text, even if it's not valid JSON
-        setExistingData(trimmed);
-        console.log(`Loaded existing record: ${trimmed}`);
-      } catch (err) {
-        console.error('Error parsing existing record:', err);
-        // Still set it as is, we'll handle validation later
-        setExistingData(existingRecord);
-      }
-    }
-  }, [existingRecord]);
-
   // Refresh the existing record data
   const handleRefreshExistingData = () => {
-    if (resolverAddress && nodeHash) {
-      refetchRecord();
+    if (ensName) {
+      fetchEnsRecords(ensName);
     }
   };
 
@@ -395,7 +354,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 {resolverAddress ? (
                   <p className="text-sm text-green-600 flex items-center">
                     <CheckCircle className="h-3 w-3 mr-1" />
-                    Resolver found: {resolverAddress.substring(0,6)}...{resolverAddress.substring(resolverAddress.length-4)}
+                    Records found for {ensName}
                   </p>
                 ) : resolverError ? (
                   <p className="text-sm text-destructive flex items-center">
@@ -416,10 +375,10 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                     variant="ghost" 
                     size="sm" 
                     onClick={handleRefreshExistingData}
-                    disabled={isFetchingRecord}
+                    disabled={isLoadingResolver}
                     className="h-6 px-2 text-xs"
                   >
-                    {isFetchingRecord ? (
+                    {isLoadingResolver ? (
                       <Loader2 className="h-3 w-3 animate-spin mr-1" />
                     ) : (
                       <RefreshCw className="h-3 w-3 mr-1" />
@@ -445,7 +404,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 <div 
                   className="font-mono text-xs p-3 bg-muted rounded-md overflow-auto max-h-32"
                 >
-                  {isFetchingRecord ? (
+                  {isLoadingResolver ? (
                     <div className="flex items-center justify-center py-2">
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       Loading data...
@@ -453,7 +412,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                   ) : existingData ? (
                     <pre>{formatJsonPreview(existingData)}</pre>
                   ) : resolverAddress && nodeHash ? (
-                    <p className="text-muted-foreground italic">No existing data found</p>
+                    <p className="text-muted-foreground italic">No me.yodl record found - one will be created</p>
                   ) : (
                     <p className="text-muted-foreground italic">Enter an ENS name to view current data</p>
                   )}
@@ -483,7 +442,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 Update Preview:
               </div>
               <div className="font-mono text-xs bg-white border border-blue-100 p-2 rounded">
-                {existingData && previewUrl ? (
+                {resolverAddress && previewUrl ? (
                   <pre>{formatJsonPreview(constructUpdatedJson())}</pre>
                 ) : (
                   <p className="text-muted-foreground italic">
@@ -493,6 +452,11 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                   </p>
                 )}
               </div>
+            </div>
+
+            <div className="flex items-center text-xs text-muted-foreground">
+              <Link className="h-3 w-3 mr-1" />
+              <span>Data fetched via <a href="https://justaname.id" target="_blank" rel="noopener noreferrer" className="underline">Justaname API</a></span>
             </div>
           </>
         )}
