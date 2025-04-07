@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -21,19 +21,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "18"
           cache: 'npm'
+      
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          echo "Installed dependencies successfully"
+      
+      - name: Install image processing dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpng-dev libjpeg-dev
+          echo "Image processing libraries installed"
+          
       - name: Build
-        run: npm run build
+        run: |
+          echo "Starting build process..."
+          npm run build
+          echo "Build completed successfully"
         env:
           NODE_ENV: production
           # This tells our config this is a GitHub Pages build
           DEPLOY_ENV: github
+          VITE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Verify build output
+        run: |
+          echo "Verifying build output..."
+          if [ ! -d "./dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+          echo "dist directory exists"
+          ls -la ./dist
+      
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:

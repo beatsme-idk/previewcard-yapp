@@ -70,17 +70,49 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
     try {
       // Validate the URL is an image
       if (await validateImageUrl(url, name)) {
-        // Update the files state with the URL as preview
+        // Fetch the image and convert to base64 for GitHub upload
+        const response = await fetch(url, { mode: 'cors' });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        }
+        
+        // Convert the fetched image to a blob
+        const blob = await response.blob();
+        
+        // Create a data URL from the blob
+        const reader = new FileReader();
+        const dataUrlPromise = new Promise<string>((resolve) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        
+        const dataUrl = await dataUrlPromise;
+        
+        // Update the files state with the dataUrl as preview
         const updatedFiles = files.map(item => 
-          item.name === name ? { ...item, preview: url } : item
+          item.name === name ? { ...item, preview: dataUrl } : item
         );
         setFiles(updatedFiles);
         onFilesChange(updatedFiles);
+        
+        // Show success message
+        toast({
+          title: `${name}.png loaded`,
+          description: `Image has been converted for GitHub upload`,
+        });
       }
+    } catch (error) {
+      console.error(`Error loading image ${name}:`, error);
+      toast({
+        title: `Failed to load ${name}.png`,
+        description: error instanceof Error ? error.message : 'Unknown error fetching image',
+        variant: "destructive"
+      });
     } finally {
       setLoading(prev => ({ ...prev, [name]: false }));
     }
-  }, [files, onFilesChange, validateImageUrl]);
+  }, [files, onFilesChange, validateImageUrl, toast]);
 
   const handleUrlChange = useCallback((name: 'inner' | 'outer' | 'overlay', url: string) => {
     // Update the URL state
@@ -148,6 +180,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
                 <div className="text-xs text-muted-foreground mt-2">
                   <p>Supported formats: PNG, JPG, WebP</p>
                   <p>The image URL must be publicly accessible</p>
+                  <p className="mt-1 text-blue-500">
+                    {name === 'inner' && 'Suggested size: 1200×800px'}
+                    {name === 'outer' && 'Suggested size: 880×480px'}
+                    {name === 'overlay' && 'Suggested size: 600×800px'}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -172,18 +209,27 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesChange }) => {
                 <div className="flex items-center justify-between mt-2 text-sm">
                   <div className="text-green-500 flex items-center">
                     <CheckCircle className="h-4 w-4 mr-1" />
-                    URL added
+                    Ready for upload
                   </div>
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    onClick={() => window.open(preview, '_blank')}
+                    onClick={() => window.open(urls[name], '_blank')}
                     className="h-6 p-0 text-xs"
                   >
                     <ExternalLink className="h-3 w-3 mr-1" />
-                    Open
+                    Source
                   </Button>
                 </div>
+                
+                {/* Show image dimensions if available */}
+                {preview && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    <div className="flex justify-between">
+                      <span>Format: {name === 'inner' ? '1200×800' : name === 'outer' ? '880×480' : '600×800'} (recommended)</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

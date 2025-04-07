@@ -24,7 +24,10 @@ interface Repository {
   id: number;
   name: string;
   full_name: string;
-  owner: string;
+  html_url: string;
+  description: string | null;
+  default_branch: string;
+  visibility: string;
 }
 
 const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChange, files }) => {
@@ -475,10 +478,36 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
           </DialogHeader>
           
           <div className="py-4">
-            <div className="flex flex-col space-y-1">
-              {previewData?.files.inner && <div className="text-sm">• inner.png</div>}
-              {previewData?.files.outer && <div className="text-sm">• outer.png</div>}
-              {previewData?.files.overlay && <div className="text-sm">• overlay.png</div>}
+            <div className="flex flex-col space-y-3">
+              {previewData?.files.inner && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="text-sm">• inner.png</div>
+                    <span className="ml-2 text-xs text-muted-foreground">(Suggested: 1200×800px)</span>
+                  </div>
+                </div>
+              )}
+              {previewData?.files.outer && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="text-sm">• outer.png</div>
+                    <span className="ml-2 text-xs text-muted-foreground">(Suggested: 880×480px)</span>
+                  </div>
+                </div>
+              )}
+              {previewData?.files.overlay && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="text-sm">• overlay.png</div>
+                    <span className="ml-2 text-xs text-muted-foreground">(Suggested: 600×800px)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-4 text-xs bg-blue-50 text-blue-600 p-3 rounded-md">
+              <p><strong>Note:</strong> Images will be converted and uploaded directly to your GitHub repository.
+              After uploading, they will be available via the jsDelivr CDN for your ENS records.</p>
             </div>
           </div>
           

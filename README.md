@@ -71,3 +71,50 @@ Yes it is!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## OG Card Creator Usage Guide
+
+### Image Requirements
+
+The OG Card Creator works with three image components:
+
+1. **Inner Image (suggested dimensions: 1200×800px)**
+   - This is the main content of your preview card
+   - Formats supported: PNG, JPG, WebP
+   - Transparent backgrounds work best
+
+2. **Outer Image (suggested dimensions: 880×480px)**
+   - This forms the frame or background
+   - Formats supported: PNG, JPG, WebP
+   - PNG with transparency is recommended
+
+3. **Overlay Image (suggested dimensions: 600×800px)**
+   - This is placed on top of the other images
+   - Formats supported: PNG, JPG, WebP
+   - PNGs with transparency work best for overlays
+
+### How to Upload Images
+
+1. Paste a publicly accessible image URL in each field
+2. The app will automatically convert these to base64 for GitHub storage
+3. All images will be uploaded to your GitHub repository
+4. The images will be available through jsDelivr CDN for your ENS/Yodl previews
+
+### Troubleshooting GitHub Uploads
+
+If you encounter issues with GitHub uploads:
+- Make sure your GitHub token has the 'repo' scope
+- Verify the repository exists and you have write permissions
+- Check that image URLs are publicly accessible
+- Images must be under 10MB for optimal processing
+
+### Example Preview Configuration
+
+Add this to your ENS records to enable preview cards:
+```json
+{
+  "og": {
+    "baseUrl": "https://cdn.jsdelivr.net/gh/yourusername/yourrepo/og/custom-folder"
+  }
+}
+```
