@@ -13,19 +13,21 @@ export class GitHubAuthService {
   private octokit: Octokit | null = null;
   private user: GitHubUser | null = null;
 
-  // GitHub OAuth App credentials
-  private clientId = 'Ov23lirpINVUj2qYzgtp';
-  
-  private get redirectUri(): string {
-    // Use the current origin for the redirect URI
-    return `${window.location.origin}/github-callback`;
-  }
+  // GitHub OAuth App credentials are no longer needed for PAT auth
+  // private clientId = 'Ov23lirpINVUj2qYzgtp';
+  // private get redirectUri(): string { ... }
 
   constructor() {
     // Check if there's a stored token
     this.token = localStorage.getItem('github_token');
     if (this.token) {
       this.initOctokit();
+      // Fetch user info on initial load if token exists
+      this.fetchUserInfo().catch(err => {
+        console.error('Failed to fetch user info on load:', err);
+        // If token is invalid on load, sign out
+        this.signOut(); 
+      });
     }
   }
 
@@ -39,11 +41,13 @@ export class GitHubAuthService {
   private initOctokit() {
     if (this.token) {
       this.octokit = new Octokit({ auth: this.token });
+    } else {
+      this.octokit = null;
     }
   }
 
   public isAuthenticated(): boolean {
-    return !!this.token;
+    return !!this.token && !!this.user;
   }
 
   public getOctokit(): Octokit | null {
@@ -58,69 +62,33 @@ export class GitHubAuthService {
     return this.token;
   }
 
-  public async signIn(): Promise<void> {
-    // Construct the GitHub OAuth URL
-    const authUrl = new URL('https://github.com/login/oauth/authorize');
-    authUrl.searchParams.append('client_id', this.clientId);
-    authUrl.searchParams.append('redirect_uri', this.redirectUri);
-    authUrl.searchParams.append('scope', 'repo');
-    authUrl.searchParams.append('state', Math.random().toString(36).substring(7));
-
-    // Store the state for verification
-    sessionStorage.setItem('github_oauth_state', authUrl.searchParams.get('state')!);
-
-    // Redirect to GitHub
-    window.location.href = authUrl.toString();
-  }
-
-  public async handleCallback(code: string, state: string): Promise<void> {
-    // Verify the state matches
-    const storedState = sessionStorage.getItem('github_oauth_state');
-    if (state !== storedState) {
-      throw new Error('Invalid state parameter');
+  // Method to set and validate a Personal Access Token
+  public async setToken(newToken: string): Promise<GitHubUser> {
+    if (!newToken || typeof newToken !== 'string' || newToken.trim().length === 0) {
+      throw new Error('Invalid token provided.');
     }
-
+    
+    this.token = newToken.trim();
+    localStorage.setItem('github_token', this.token);
+    this.initOctokit();
+    
+    // Validate the token by fetching user info
     try {
-      // Exchange the code for an access token
-      const response = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: this.clientId,
-          client_secret: 'GITHUB_CLIENT_SECRET', // This should be handled by a backend
-          code,
-          redirect_uri: this.redirectUri
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to exchange code for token');
-      }
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error_description || data.error);
-      }
-
-      // Store the token
-      this.token = data.access_token;
-      localStorage.setItem('github_token', this.token);
-      this.initOctokit();
-
-      // Get user info
-      await this.fetchUserInfo();
+      const user = await this.fetchUserInfo();
+      console.log('Token validated successfully for user:', user.login);
+      return user;
     } catch (error) {
-      console.error('Error handling GitHub callback:', error);
-      throw error;
+      // If validation fails, clear the invalid token
+      this.signOut();
+      console.error('Token validation failed:', error);
+      throw new Error('Invalid token or insufficient scope. Please ensure the token has \'repo\' scope.');
     }
   }
 
+  // Fetch user info (kept public for validation and component use)
   public async fetchUserInfo(): Promise<GitHubUser> {
     if (!this.octokit) {
-      throw new Error('Not authenticated');
+      throw new Error('Authentication required (Octokit not initialized).');
     }
 
     try {
@@ -134,7 +102,9 @@ export class GitHubAuthService {
       return this.user;
     } catch (error) {
       console.error('Error fetching user info:', error);
-      throw error;
+      // Reset user if fetch fails
+      this.user = null;
+      throw error; // Re-throw to indicate failure
     }
   }
 
@@ -143,5 +113,9 @@ export class GitHubAuthService {
     this.octokit = null;
     this.user = null;
     localStorage.removeItem('github_token');
+    // Optionally notify listeners if using an event system
+    console.log('User signed out.');
   }
+  
+  // Removed OAuth specific methods: signIn(), handleCallback()
 } 
