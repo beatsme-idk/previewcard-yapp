@@ -5,6 +5,7 @@ import FileUpload from '@/components/FileUpload';
 import PreviewCard from '@/components/PreviewCard';
 import JsonEditor from '@/components/JsonEditor';
 import WalletConnect from '@/components/WalletConnect';
+import EnsUpdater from '@/components/EnsUpdater';
 import { ImageFile, PreviewData, Step, FolderPath } from '@/lib/types';
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useToast } from '@/components/ui/use-toast';
@@ -109,7 +110,7 @@ const Index = () => {
           files={files}
         />;
       case 2:
-        return <JsonEditor previewData={previewData} />;
+        return <EnsUpdater previewData={previewData} />;
       default:
         return null;
     }
