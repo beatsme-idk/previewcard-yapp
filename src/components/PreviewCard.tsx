@@ -12,7 +12,6 @@ import { GitHubService } from '@/lib/githubService';
 import GitHubLogin from './GitHubLogin';
 import RateLimitIndicator from './RateLimitIndicator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface PreviewCardProps {
@@ -46,7 +45,6 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [confirmUploadDialog, setConfirmUploadDialog] = useState(false);
   const [newRepoName, setNewRepoName] = useState('');
-  const [isPrivateRepo, setIsPrivateRepo] = useState(false);
   const [creatingRepo, setCreatingRepo] = useState(false);
   const [showVisibilityWarning, setShowVisibilityWarning] = useState(false);
 
@@ -202,24 +200,36 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   };
 
   const handleCreateRepository = async () => {
+    if (!newRepoName.trim()) {
+      toast({
+        title: "Repository name required",
+        description: "Please enter a name for the new repository.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setCreatingRepo(true);
     try {
-      // Always create public repositories for OG card assets
-      const result = await githubService.createRepository(newRepoName, false);
+      // Use the new method specifically for creating public repositories
+      const result = await githubService.createNewPublicRepository(newRepoName);
       toast({
         title: "Repository created successfully",
-        description: "Your new public repository has been created and is ready to use",
+        description: `Public repository '${result.full_name}' created.`,
       });
       
       // Set the repository in the form
+      const owner = result.full_name.split('/')[0];
       handlePathChange('repo', result.name);
-      handlePathChange('username', result.owner);
+      handlePathChange('username', owner);
       
-      // Reload repositories
-      loadRepositories();
+      // Reload repositories list to include the new one
+      await loadRepositories();
+      
+      // Reset the input field and hide visibility warning
       setNewRepoName('');
-      setIsPrivateRepo(false);
       setShowVisibilityWarning(false);
+      
     } catch (error) {
       console.error('Error creating repository:', error);
       toast({

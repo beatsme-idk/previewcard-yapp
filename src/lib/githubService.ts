@@ -254,33 +254,60 @@ export class GitHubService {
     try {
       const { data } = await this.octokit.rest.repos.createForAuthenticatedUser({
         name: repoName,
-        description: 'Repository for storing OG card assets',
         private: isPrivate,
-        auto_init: true, // Initialize with README to make it valid immediately
+        auto_init: true, // Initialize with a README
       });
-      
-      // Create an 'og' folder by adding a .gitkeep file
-      await this.octokit.rest.repos.createOrUpdateFileContents({
-        owner: data.owner.login,
-        repo: data.name,
+
+      // Ensure the 'og' folder exists (add .gitkeep to ensure it's pushed)
+      const owner = data.owner.login;
+      await this.uploadFile({
+        owner: owner,
+        repo: repoName,
         path: 'og/.gitkeep',
-        message: 'Initialize og folder',
-        content: Buffer.from('').toString('base64'),
+        content: Buffer.from('').toString('base64'), // Empty file content
+        message: 'Initialize og folder for assets'
       });
       
       // Update rate limits after operation
       this.rateLimitService.updateRateLimits(this.octokit).catch(console.error);
+
+      return data;
+    } catch (error: any) {
+      console.error('Error creating repository:', error);
+      // Provide more specific error messages
+      if (error.status === 422 && error.message.includes("name already exists")) {
+        throw new Error(`Repository named '${repoName}' already exists.`);
+      }
+      throw new Error(`Failed to create repository: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Creates a new PUBLIC repository for the authenticated user.
+   * Initializes the repository with a README and an 'og' folder.
+   * @param repoName The name for the new repository.
+   * @returns The data for the created repository.
+   */
+  async createNewPublicRepository(repoName: string): Promise<GitHubRepository> {
+    console.log(`Attempting to create new public repository: ${repoName}`);
+    // We reuse the existing createRepository but force isPrivate to false
+    try {
+      const createdRepo = await this.createRepository(repoName, false); // Always public
+      console.log(`Successfully created public repository: ${createdRepo.full_name}`);
       
+      // Map the response to our GitHubRepository interface
       return {
-        id: data.id,
-        name: data.name,
-        full_name: data.full_name,
-        owner: data.owner.login,
-        private: data.private,
-        html_url: data.html_url
+        id: createdRepo.id,
+        name: createdRepo.name,
+        full_name: createdRepo.full_name,
+        html_url: createdRepo.html_url,
+        description: createdRepo.description,
+        default_branch: createdRepo.default_branch,
+        visibility: 'public' // Explicitly set as public
       };
     } catch (error) {
-      console.error('Error creating repository:', error);
+      console.error(`Failed to create public repository ${repoName}:`, error);
+      // Re-throw the error to be handled by the caller
       throw error;
     }
   }
