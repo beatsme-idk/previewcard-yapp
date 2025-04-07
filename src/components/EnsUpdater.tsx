@@ -44,10 +44,8 @@ const ensResolverWriteAbi = [
 
 // Well-known ENS public resolver addresses
 const KNOWN_RESOLVERS = [
-  '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41', // ENS Public Resolver (old)
   '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63', // ENS Public Resolver
-  '0x112234455c3a32fd11230c42e7bccd4a84e02010', // ENS Public Resolver
-  '0x226159d592e2b063810a10ebf6dcbada94ed68b8', // JustaName Resolver
+  '0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41', // ENS Public Resolver (old)
   '0xdba48394d77ed167f4e8d49850bd3c216c2c95df', // Yodl Resolver
 ];
 
@@ -113,14 +111,17 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     try {
       // Normalize the name and get the namehash
       const normalizedName = normalize(name);
-      const node = namehash(normalizedName);
-      setNodeHash(node);
       
       console.log(`Processing ENS name: ${normalizedName}`);
-      console.log(`Namehash: ${node}`);
+      
+      // Calculate the namehash correctly using viem's namehash function
+      const node = namehash(normalizedName);
+      console.log(`Generated namehash: ${node}`);
+      
+      // Store the hash for later use
+      setNodeHash(node);
       
       // Get resolver from chain lookup
-      // For reliable verification, check all well-known resolvers
       for (const knownResolver of KNOWN_RESOLVERS) {
         try {
           console.log(`Checking resolver: ${knownResolver}`);
@@ -142,7 +143,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
       }
       
       // If we get here, no resolver was found
-      throw new Error('No working resolver found for this name. Are you sure this is a valid ENS name?');
+      throw new Error('No working resolver found. Make sure you own this ENS name.');
     } catch (err: any) {
       console.error('Error processing ENS name:', err);
       setResolverError(err.message || 'Failed to find resolver. Ensure the name is correct and registered.');
@@ -201,6 +202,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
         const trimmed = existingRecord.trim();
         // Set raw text, even if it's not valid JSON
         setExistingData(trimmed);
+        console.log(`Loaded existing record: ${trimmed}`);
       } catch (err) {
         console.error('Error parsing existing record:', err);
         // Still set it as is, we'll handle validation later
@@ -239,6 +241,11 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     return JSON.stringify(updatedData);
   };
 
+  // Helper function to validate namehash format
+  const isValidNamehash = (hash: string): boolean => {
+    return hash.startsWith('0x') && hash.length === 66; // 0x + 64 hex chars
+  };
+
   const handleUpdateEns = async () => {
     if (!isConnected || !address) {
       toast({ title: "Connect Wallet", description: "Please connect your wallet.", variant: "destructive" });
@@ -262,6 +269,17 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
       });
       return;
     }
+
+    // Validate the namehash format
+    if (!isValidNamehash(nodeHash)) {
+      console.error(`Invalid namehash format: ${nodeHash}`);
+      toast({
+        title: "Invalid Namehash",
+        description: "The ENS namehash has an invalid format. Try again with a different ENS name.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     // Construct the updated JSON
     const updatedValue = constructUpdatedJson();
@@ -269,21 +287,33 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     console.log(`Updating ENS record for ${ensName}:`);
     console.log(`  Resolver: ${resolverAddress}`);
     console.log(`  Key: ${recordKey}`);
+    console.log(`  Node hash: ${nodeHash}`);
+    console.log(`  Node hash type: ${typeof nodeHash}`);
+    console.log(`  Node hash length: ${nodeHash.length - 2} bytes`); // Subtract 2 for "0x"
     console.log(`  Previous value: ${existingData || '(none)'}`);
     console.log(`  New value: ${updatedValue}`);
     
-    writeContract({
-      address: resolverAddress,
-      abi: ensResolverWriteAbi,
-      functionName: 'setText',
-      args: [
-        nodeHash,
-        recordKey,
-        updatedValue
-      ],
-      chain: mainnet,
-      account: address
-    });
+    try {
+      writeContract({
+        address: resolverAddress,
+        abi: ensResolverWriteAbi,
+        functionName: 'setText',
+        args: [
+          nodeHash,
+          recordKey,
+          updatedValue
+        ],
+        chain: mainnet,
+        account: address
+      });
+    } catch (error) {
+      console.error("Contract write error:", error);
+      toast({ 
+        title: "Transaction Error", 
+        description: "Failed to send transaction. Check console for details.", 
+        variant: "destructive" 
+      });
+    }
   };
 
   // Error handling
