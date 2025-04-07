@@ -427,4 +427,63 @@ export class GitHubService {
       };
     }
   }
+
+  // Get a specific repository by owner and name
+  async getRepositoryInfo(owner: string, repo: string) {
+    // Return mock data if using simulated token
+    if (this.isUsingSimulatedToken()) {
+      console.log('Using simulated repository info for demo mode');
+      return {
+        id: 1296269,
+        name: repo,
+        full_name: `${owner}/${repo}`,
+        html_url: `https://github.com/${owner}/${repo}`,
+        description: 'Demo repository for preview card testing',
+        default_branch: 'main',
+        visibility: 'public',
+        private: false
+      };
+    }
+  
+    if (!this.octokit) {
+      throw new Error('Not authenticated');
+    }
+    
+    try {
+      const { data } = await this.octokit.rest.repos.get({
+        owner,
+        repo
+      });
+      
+      await this.rateLimitService.updateRateLimits(this.octokit);
+      
+      return {
+        id: data.id,
+        name: data.name,
+        full_name: data.full_name,
+        html_url: data.html_url,
+        description: data.description || null,
+        default_branch: data.default_branch,
+        visibility: data.visibility,
+        private: data.private
+      };
+    } catch (error) {
+      console.error('Error fetching repository:', error);
+      
+      if (this.isUsingSimulatedToken()) {
+        return {
+          id: 1296269,
+          name: repo,
+          full_name: `${owner}/${repo}`,
+          html_url: `https://github.com/${owner}/${repo}`,
+          description: 'Demo repository for preview card testing',
+          default_branch: 'main',
+          visibility: 'public',
+          private: false
+        };
+      }
+      
+      throw error;
+    }
+  }
 } 

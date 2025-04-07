@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FolderPath, PreviewData, ImageFile } from '@/lib/types';
-import { Copy, ExternalLink, RefreshCw, Github, Loader2, AlertCircle } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Github, Loader2, AlertCircle, Info } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { GitHubService } from '@/lib/githubService';
@@ -13,6 +13,7 @@ import GitHubLogin from './GitHubLogin';
 import RateLimitIndicator from './RateLimitIndicator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface PreviewCardProps {
   previewData: PreviewData | null;
@@ -47,6 +48,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   const [newRepoName, setNewRepoName] = useState('');
   const [isPrivateRepo, setIsPrivateRepo] = useState(false);
   const [creatingRepo, setCreatingRepo] = useState(false);
+  const [showVisibilityWarning, setShowVisibilityWarning] = useState(false);
 
   // Create GitHub service instance
   const githubService = new GitHubService();
@@ -97,10 +99,35 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     }
   };
 
+  // Check if selected repository is public
+  const checkRepositoryVisibility = useCallback(async (username: string, repo: string) => {
+    try {
+      const repoInfo = await githubService.getRepositoryInfo(username, repo);
+      if (repoInfo && repoInfo.private) {
+        setShowVisibilityWarning(true);
+        toast({
+          title: "Repository is private",
+          description: "OG card assets must be in a public repository to work with CDN.",
+          variant: "destructive"
+        });
+      } else {
+        setShowVisibilityWarning(false);
+      }
+    } catch (error) {
+      console.error("Error checking repository visibility:", error);
+    }
+  }, [githubService, toast]);
+
+  // Update handlePathChange to check visibility when repo changes
   const handlePathChange = (field: keyof FolderPath, value: string) => {
     const newPath = { ...folderPath, [field]: value };
     setFolderPath(newPath);
     onFolderPathChange(newPath);
+    
+    // Check repository visibility when username and repo are set
+    if (field === 'repo' && newPath.username && newPath.repo) {
+      checkRepositoryVisibility(newPath.username, newPath.repo);
+    }
   };
 
   const handleRefreshPreview = () => {
@@ -177,10 +204,11 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   const handleCreateRepository = async () => {
     setCreatingRepo(true);
     try {
-      const result = await githubService.createRepository(newRepoName, isPrivateRepo);
+      // Always create public repositories for OG card assets
+      const result = await githubService.createRepository(newRepoName, false);
       toast({
         title: "Repository created successfully",
-        description: "Your new repository has been created and is ready to use",
+        description: "Your new public repository has been created and is ready to use",
       });
       
       // Set the repository in the form
@@ -191,6 +219,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
       loadRepositories();
       setNewRepoName('');
       setIsPrivateRepo(false);
+      setShowVisibilityWarning(false);
     } catch (error) {
       console.error('Error creating repository:', error);
       toast({
@@ -345,19 +374,29 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      <Checkbox 
-                        id="private-repo" 
-                        checked={isPrivateRepo}
-                        onCheckedChange={(checked) => setIsPrivateRepo(checked === true)}
-                      />
-                      <Label htmlFor="private-repo" className="text-sm font-normal">
-                        Create as private repository
-                      </Label>
+                      <Alert className="bg-blue-50 border-blue-200">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        <AlertTitle className="text-blue-800 text-sm">Public Repository Required</AlertTitle>
+                        <AlertDescription className="text-blue-700 text-xs">
+                          OG card assets must be stored in a public repository to be accessible via CDN.
+                        </AlertDescription>
+                      </Alert>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {showVisibilityWarning && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Private Repository Selected</AlertTitle>
+              <AlertDescription>
+                The selected repository is private. Your OG card assets will not be accessible
+                via CDN unless the repository is public. Please select or create a public repository.
+              </AlertDescription>
+            </Alert>
           )}
 
           {previewUrl && (
@@ -508,6 +547,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
             <div className="mt-4 text-xs bg-blue-50 text-blue-600 p-3 rounded-md">
               <p><strong>Note:</strong> Images will be converted and uploaded directly to your GitHub repository.
               After uploading, they will be available via the jsDelivr CDN for your ENS records.</p>
+              <p className="mt-2"><strong>Important:</strong> Ensure your repository is public, or the CDN will not be able to access your images.</p>
             </div>
           </div>
           
