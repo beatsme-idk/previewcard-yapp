@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAccount } from 'wagmi';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -18,47 +18,64 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
   const { toast } = useToast();
   const [hasCopied, setHasCopied] = useState(false);
   const [existingJson, setExistingJson] = useState('');
-  const [hasEditedJson, setHasEditedJson] = useState(false);
+  const [parsedJson, setParsedJson] = useState<any>({});
+  const [jsonError, setJsonError] = useState<string | null>(null);
   
   const previewUrl = previewData?.baseUrl || '';
 
-  // Simple JSON constructor for preview URL
-  const constructJsonWithPreviewUrl = (existingJson: string): string => {
-    let baseData = {};
-    
-    // Try to parse existing JSON if provided
-    if (existingJson.trim()) {
-      try {
-        baseData = JSON.parse(existingJson);
-        setHasEditedJson(true);
-      } catch (err) {
-        console.warn('Invalid JSON input - starting fresh');
-        baseData = {};
-        setHasEditedJson(false);
-      }
+  // Safely parse JSON when existingJson changes
+  useEffect(() => {
+    if (!existingJson.trim()) {
+      setParsedJson({});
+      setJsonError(null);
+      return;
     }
+
+    try {
+      const parsed = JSON.parse(existingJson);
+      setParsedJson(parsed);
+      setJsonError(null);
+    } catch (err) {
+      console.warn('Invalid JSON input:', err);
+      // Don't change parsedJson on error
+      setJsonError('Invalid JSON format. Please check your input.');
+    }
+  }, [existingJson]);
+  
+  // Create JSON with preview URL
+  const getUpdatedJson = useCallback(() => {
+    if (!previewUrl) return '';
     
-    // Add or update og.baseUrl
+    // Create a new object to avoid mutating the state directly
     const updatedData = {
-      ...baseData,
+      ...parsedJson,
       og: {
-        ...(baseData as any).og,
+        ...(parsedJson.og || {}),
         baseUrl: previewUrl
       }
     };
     
     return JSON.stringify(updatedData, null, 2);
-  };
+  }, [parsedJson, previewUrl]);
   
   // Format JSON for display
-  const formatJsonForDisplay = (): string => {
+  const formatJsonForDisplay = useCallback((): string => {
     if (!previewUrl) return '// Generate a preview URL first';
-    return constructJsonWithPreviewUrl(existingJson);
-  };
+    return getUpdatedJson();
+  }, [previewUrl, getUpdatedJson]);
   
   // Handle copy to clipboard
-  const handleCopy = () => {
-    const jsonToCopy = formatJsonForDisplay();
+  const handleCopy = useCallback(() => {
+    const jsonToCopy = getUpdatedJson();
+    if (!jsonToCopy) {
+      toast({
+        title: "Nothing to copy",
+        description: "Please generate a preview URL first.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     navigator.clipboard.writeText(jsonToCopy).then(
       () => {
         setHasCopied(true);
@@ -79,7 +96,13 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
         });
       }
     );
-  };
+  }, [getUpdatedJson, toast]);
+
+  // Handle text input change safely
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // Just update the text value, parsing happens in the useEffect
+    setExistingJson(e.target.value);
+  }, []);
 
   return (
     <Card className="w-full">
@@ -108,13 +131,19 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
               <textarea
                 id="existingJson"
                 value={existingJson}
-                onChange={(e) => setExistingJson(e.target.value)}
+                onChange={handleTextChange}
                 placeholder="Paste your existing me.yodl record here (if any)"
                 className="w-full h-24 p-2 font-mono text-xs border rounded-md"
               />
-              <p className="text-xs text-muted-foreground">
-                If you already have a me.yodl record, paste it here to preserve your existing data
-              </p>
+              <div className="text-xs">
+                {jsonError ? (
+                  <p className="text-destructive">{jsonError}</p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    If you already have a me.yodl record, paste it here to preserve your existing data
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -140,7 +169,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                   variant="outline"
                   size="sm"
                   onClick={handleCopy}
-                  disabled={!previewUrl}
+                  disabled={!previewUrl || !!jsonError}
                   className="h-8 gap-1"
                 >
                   {hasCopied ? (
@@ -158,7 +187,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
               </div>
               <div className="relative font-mono text-xs p-3 bg-muted rounded-md overflow-auto max-h-48">
                 <pre className="whitespace-pre-wrap break-all">
-                  {formatJsonForDisplay()}
+                  {jsonError ? '// Fix JSON error before previewing' : formatJsonForDisplay()}
                 </pre>
               </div>
             </div>
@@ -199,7 +228,7 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
       <CardFooter className="flex flex-col items-stretch gap-4">
         <Button
           onClick={handleCopy}
-          disabled={!isConnected || !previewUrl}
+          disabled={!isConnected || !previewUrl || !!jsonError}
         >
           {hasCopied ? (
             <>
