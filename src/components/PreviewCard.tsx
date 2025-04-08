@@ -274,9 +274,9 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
     : null;
 
-  // Construct the yodl preview URL (in a real app this would point to the actual Yodl OG Card Generator)
+  // Construct the yodl preview URL with proper format
   const yodlPreviewUrl = previewUrl 
-    ? `https://yodl.me/preview?url=${encodeURIComponent(previewUrl)}`
+    ? `https://og.yodl.me/v1/preview/0x3ee275ae7504f206273f1a0f2d6bfbffda962c028542a8425ef9ca602d85a364?baseUrl=${encodeURIComponent(previewUrl)}`
     : null;
 
   return (
@@ -476,20 +476,29 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
                 <div className="relative w-full h-[300px] bg-black/30 rounded-md overflow-hidden border border-border">
                   {previewData ? (
                     <div className="w-full h-full flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
-                        <div className="text-sm text-muted-foreground mb-4">
-                          Files would be uploaded to:
-                          <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">/og/{folderPath.folder}/</div>
+                      {yodlPreviewUrl ? (
+                        <iframe 
+                          src={yodlPreviewUrl} 
+                          className="w-full h-full border-0" 
+                          title="Yodl Preview" 
+                          loading="lazy"
+                        ></iframe>
+                      ) : (
+                        <div className="text-center">
+                          <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
+                          <div className="text-sm text-muted-foreground mb-4">
+                            Files would be uploaded to:
+                            <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">/og/{folderPath.folder}/</div>
+                          </div>
+                          {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
+                          {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
+                          {previewData.files.overlay && <div className="text-green-500 text-xs">✓ overlay.png</div>}
+                          
+                          {(!previewData.files.inner || !previewData.files.outer || !previewData.files.overlay) && (
+                            <div className="text-yellow-500 text-xs mt-2">Missing required files</div>
+                          )}
                         </div>
-                        {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
-                        {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
-                        {previewData.files.overlay && <div className="text-green-500 text-xs">✓ overlay.png</div>}
-                        
-                        {(!previewData.files.inner || !previewData.files.outer || !previewData.files.overlay) && (
-                          <div className="text-yellow-500 text-xs mt-2">Missing required files</div>
-                        )}
-                      </div>
+                      )}
                     </div>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted-foreground">
