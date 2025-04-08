@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FolderPath, PreviewData, ImageFile } from '@/lib/types';
-import { Copy, ExternalLink, RefreshCw, Github, Loader2, AlertCircle, Info } from 'lucide-react';
+import { Copy, ExternalLink, RefreshCw, Github, Loader2, AlertCircle, Info, CheckCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { GitHubService } from '@/lib/githubService';
@@ -13,11 +13,13 @@ import GitHubLogin from './GitHubLogin';
 import RateLimitIndicator from './RateLimitIndicator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import EnsFeatures from './EnsFeatures';
 
 interface PreviewCardProps {
   previewData: PreviewData | null;
   onFolderPathChange: (path: FolderPath) => void;
   files: ImageFile[];
+  ensName?: string;
 }
 
 interface Repository {
@@ -30,7 +32,7 @@ interface Repository {
   visibility: string;
 }
 
-const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChange, files }) => {
+const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChange, files, ensName }) => {
   const { toast } = useToast();
   const [folderPath, setFolderPath] = useState<FolderPath>({
     username: '',
@@ -47,6 +49,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   const [newRepoName, setNewRepoName] = useState('');
   const [creatingRepo, setCreatingRepo] = useState(false);
   const [showVisibilityWarning, setShowVisibilityWarning] = useState(false);
+  const [hasCopied, setHasCopied] = useState(false);
 
   // Create GitHub service instance
   const githubService = new GitHubService();
@@ -91,9 +94,16 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
   };
 
   const handleCopyUrl = () => {
-    if (previewUrl) {
-      navigator.clipboard.writeText(previewUrl);
+    if (previewData?.baseUrl) {
+      navigator.clipboard.writeText(previewData.baseUrl);
+      setHasCopied(true);
       toast({ title: "Copied to clipboard", duration: 2000 });
+    }
+  };
+
+  const handleOpenInNewTab = () => {
+    if (previewData?.baseUrl) {
+      window.open(previewData.baseUrl, '_blank');
     }
   };
 
@@ -128,24 +138,8 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     }
   };
 
-  // Add a state for preview refresh timestamp
-  const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
-
-  // Construct the preview URL
-  const previewUrl = folderPath.username && folderPath.repo && folderPath.folder 
-    ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
-    : null;
-
-  // Construct the yodl preview URL with proper format and timestamp for cache busting
-  const yodlPreviewUrl = previewUrl 
-    ? `https://og.yodl.me/v1/preview/0x3ee275ae7504f206273f1a0f2d6bfbffda962c028542a8425ef9ca602d85a364?baseUrl=${encodeURIComponent(previewUrl)}&_t=${previewTimestamp}`
-    : null;
-
-  // Refresh the preview by updating the timestamp
   const handleRefreshPreview = () => {
     setLoading(true);
-    setPreviewTimestamp(Date.now());
-    // Add a slight delay to make the loading animation visible
     setTimeout(() => {
       setLoading(false);
     }, 1000);
@@ -284,6 +278,16 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
       setCreatingRepo(false);
     }
   };
+
+  // Construct the preview URL
+  const previewUrl = folderPath.username && folderPath.repo && folderPath.folder 
+    ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
+    : null;
+
+  // Construct the yodl preview URL (in a real app this would point to the actual Yodl OG Card Generator)
+  const yodlPreviewUrl = previewUrl 
+    ? `https://yodl.me/preview?url=${encodeURIComponent(previewUrl)}`
+    : null;
 
   return (
     <>
@@ -440,100 +444,41 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
             </Alert>
           )}
 
-          {previewUrl && (
-            <div className="mt-6 space-y-4">
-              <div>
-                <Label>Preview URL</Label>
-                <div className="flex mt-1">
-                  <Input 
-                    readOnly 
-                    value={previewUrl}
-                    className="font-mono text-sm"
-                  />
-                  <Button 
-                    variant="outline" 
-                    size="icon"
-                    className="ml-2"
-                    onClick={handleCopyUrl}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              
-              <div className="bg-muted rounded-md p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">Yodl Preview</h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8"
-                    onClick={handleRefreshPreview}
-                    disabled={loading}
-                  >
-                    <RefreshCw className={cn(
-                      "h-4 w-4 mr-2",
-                      loading && "animate-spin"
-                    )} />
-                    Refresh
-                  </Button>
-                </div>
-                
-                <div className="relative w-full h-[300px] bg-black/30 rounded-md overflow-hidden border border-border">
-                  {previewData ? (
-                    <div className="w-full h-full flex items-center justify-center">
-                      {yodlPreviewUrl ? (
-                        <iframe 
-                          src={yodlPreviewUrl} 
-                          className="w-full h-full border-0" 
-                          title="Yodl Preview" 
-                          loading="lazy"
-                          key={previewUrl}
-                        ></iframe>
-                      ) : (
-                        <div className="text-center">
-                          <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
-                          <div className="text-sm text-muted-foreground mb-4">
-                            <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">
-                              Your OG card will be available at: <br />
-                              {folderPath.username && folderPath.repo ? 
-                                `https://og.yodl.me/v1/preview/[hash]?baseUrl=https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
-                                : 'Please enter repository details'}
-                            </div>
-                          </div>
-                          {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
-                          {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
-                          {previewData.files.overlay && <div className="text-green-500 text-xs">✓ overlay.png</div>}
-                          
-                          {(!previewData.files.inner || !previewData.files.outer || !previewData.files.overlay) && (
-                            <div className="text-yellow-500 text-xs mt-2">Missing required files</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                      Preview not available - upload files first
-                    </div>
-                  )}
-                </div>
-                
-                {yodlPreviewUrl && (
-                  <div className="mt-3 flex justify-between">
-                    <div className="text-xs text-muted-foreground">
-                      Preview shows how your OG card will look on social media
-                    </div>
-                    <Button 
-                      variant="secondary" 
-                      size="sm" 
-                      className="flex items-center text-xs"
-                      onClick={() => window.open(yodlPreviewUrl, '_blank')}
+          {previewData && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="aspect-video relative border rounded-lg overflow-hidden">
+                    <iframe
+                      src={previewData.baseUrl}
+                      className="w-full h-full"
+                      style={{ transform: 'scale(0.6)', transformOrigin: '0 0' }}
+                      title="Preview"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open(previewData.baseUrl, '_blank')}
                     >
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      Open in Yodl Preview
+                      Open in New Tab
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(previewData.baseUrl);
+                        toast({
+                          title: "URL copied to clipboard",
+                          description: "You can now share this URL",
+                        });
+                      }}
+                    >
+                      Copy URL
                     </Button>
                   </div>
-                )}
+                </div>
+                
+                <EnsFeatures ensName={ensName} />
               </div>
             </div>
           )}
