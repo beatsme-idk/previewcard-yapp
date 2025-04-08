@@ -128,8 +128,24 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
     }
   };
 
+  // Add a state for preview refresh timestamp
+  const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
+
+  // Construct the preview URL
+  const previewUrl = folderPath.username && folderPath.repo && folderPath.folder 
+    ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
+    : null;
+
+  // Construct the yodl preview URL with proper format and timestamp for cache busting
+  const yodlPreviewUrl = previewUrl 
+    ? `https://og.yodl.me/v1/preview/0x3ee275ae7504f206273f1a0f2d6bfbffda962c028542a8425ef9ca602d85a364?baseUrl=${encodeURIComponent(previewUrl)}&_t=${previewTimestamp}`
+    : null;
+
+  // Refresh the preview by updating the timestamp
   const handleRefreshPreview = () => {
     setLoading(true);
+    setPreviewTimestamp(Date.now());
+    // Add a slight delay to make the loading animation visible
     setTimeout(() => {
       setLoading(false);
     }, 1000);
@@ -268,16 +284,6 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
       setCreatingRepo(false);
     }
   };
-
-  // Construct the preview URL
-  const previewUrl = folderPath.username && folderPath.repo && folderPath.folder 
-    ? `https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
-    : null;
-
-  // Construct the yodl preview URL with proper format
-  const yodlPreviewUrl = previewUrl 
-    ? `https://og.yodl.me/v1/preview/0x3ee275ae7504f206273f1a0f2d6bfbffda962c028542a8425ef9ca602d85a364?baseUrl=${encodeURIComponent(previewUrl)}`
-    : null;
 
   return (
     <>
@@ -482,13 +488,18 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
                           className="w-full h-full border-0" 
                           title="Yodl Preview" 
                           loading="lazy"
+                          key={previewUrl}
                         ></iframe>
                       ) : (
                         <div className="text-center">
                           <div className="text-lg font-bold gradient-text mb-2">Preview Simulation</div>
                           <div className="text-sm text-muted-foreground mb-4">
-                            Files would be uploaded to:
-                            <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">/og/{folderPath.folder}/</div>
+                            <div className="font-mono mt-1 text-xs bg-secondary/50 p-2 rounded">
+                              Your OG card will be available at: <br />
+                              {folderPath.username && folderPath.repo ? 
+                                `https://og.yodl.me/v1/preview/[hash]?baseUrl=https://cdn.jsdelivr.net/gh/${folderPath.username}/${folderPath.repo}/og/${folderPath.folder}`
+                                : 'Please enter repository details'}
+                            </div>
                           </div>
                           {previewData.files.inner && <div className="text-green-500 text-xs">✓ inner.png</div>}
                           {previewData.files.outer && <div className="text-green-500 text-xs">✓ outer.png</div>}
@@ -508,7 +519,10 @@ const PreviewCard: React.FC<PreviewCardProps> = ({ previewData, onFolderPathChan
                 </div>
                 
                 {yodlPreviewUrl && (
-                  <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-between">
+                    <div className="text-xs text-muted-foreground">
+                      Preview shows how your OG card will look on social media
+                    </div>
                     <Button 
                       variant="secondary" 
                       size="sm" 
