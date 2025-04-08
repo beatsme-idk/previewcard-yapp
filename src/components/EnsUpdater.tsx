@@ -9,6 +9,9 @@ import { Loader2, CheckCircle, AlertCircle, Copy, ExternalLink } from 'lucide-re
 import { useToast } from '@/components/ui/use-toast';
 import { PreviewData } from '@/lib/types';
 
+// Storage key for existing JSON
+const STORAGE_KEY_EXISTING_JSON = 'previewcard_existing_json';
+
 interface EnsUpdaterProps {
   previewData: PreviewData | null;
 }
@@ -23,6 +26,18 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
   
   const previewUrl = previewData?.baseUrl || '';
 
+  // Load existing JSON from localStorage on component mount
+  useEffect(() => {
+    try {
+      const savedJson = localStorage.getItem(STORAGE_KEY_EXISTING_JSON);
+      if (savedJson) {
+        setExistingJson(savedJson);
+      }
+    } catch (error) {
+      console.error('Failed to load existing JSON from localStorage:', error);
+    }
+  }, []);
+
   // Safely parse JSON when existingJson changes
   useEffect(() => {
     if (!existingJson.trim()) {
@@ -35,6 +50,9 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
       const parsed = JSON.parse(existingJson);
       setParsedJson(parsed);
       setJsonError(null);
+      
+      // Save valid JSON to localStorage
+      localStorage.setItem(STORAGE_KEY_EXISTING_JSON, existingJson);
     } catch (err) {
       console.warn('Invalid JSON input:', err);
       // Don't change parsedJson on error
@@ -104,6 +122,19 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
     setExistingJson(e.target.value);
   }, []);
 
+  // Handle clear existing JSON
+  const handleClearJson = useCallback(() => {
+    setExistingJson('');
+    setParsedJson({});
+    setJsonError(null);
+    localStorage.removeItem(STORAGE_KEY_EXISTING_JSON);
+    
+    toast({
+      title: "JSON Cleared",
+      description: "Existing JSON has been cleared.",
+    });
+  }, [toast]);
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -115,18 +146,28 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
       </CardHeader>
       <CardContent className="space-y-4">
         {!isConnected ? (
-           <Alert variant="destructive">
+           <Alert>
              <AlertCircle className="h-4 w-4" />
-             <AlertTitle>Wallet Not Connected</AlertTitle>
+             <AlertTitle>Note</AlertTitle>
              <AlertDescription>
-               Please connect your wallet to continue.
+               You don't need to connect a wallet to view and copy the JSON.
              </AlertDescription>
            </Alert>
-        ) : (
-          <>
+        ) : null}
+        <>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <Label htmlFor="existingJson">Current JSON (Optional)</Label>
+                {existingJson && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={handleClearJson} 
+                    className="h-6 px-2 text-xs"
+                  >
+                    Clear
+                  </Button>
+                )}
               </div>
               <textarea
                 id="existingJson"
@@ -222,13 +263,12 @@ const EnsUpdater: React.FC<EnsUpdaterProps> = ({ previewData }) => {
                 </ol>
               </AlertDescription>
             </Alert>
-          </>
-        )}
+        </>
       </CardContent>
       <CardFooter className="flex flex-col items-stretch gap-4">
         <Button
           onClick={handleCopy}
-          disabled={!isConnected || !previewUrl || !!jsonError}
+          disabled={!previewUrl || !!jsonError}
         >
           {hasCopied ? (
             <>

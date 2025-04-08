@@ -10,6 +10,10 @@ import { ImageFile, PreviewData, Step, FolderPath } from '@/lib/types';
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useToast } from '@/components/ui/use-toast';
 
+// Local storage keys
+const STORAGE_KEY_FILES = 'previewcard_files';
+const STORAGE_KEY_FOLDER_PATH = 'previewcard_folder_path';
+
 const steps: Step[] = [
   {
     id: 'upload',
@@ -35,6 +39,26 @@ const Index = () => {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [folderPath, setFolderPath] = useState<FolderPath | null>(null);
 
+  // Load data from localStorage on component mount
+  useEffect(() => {
+    try {
+      // Load files
+      const savedFiles = localStorage.getItem(STORAGE_KEY_FILES);
+      if (savedFiles) {
+        setFiles(JSON.parse(savedFiles));
+      }
+      
+      // Load folder path
+      const savedFolderPath = localStorage.getItem(STORAGE_KEY_FOLDER_PATH);
+      if (savedFolderPath) {
+        setFolderPath(JSON.parse(savedFolderPath));
+      }
+    } catch (error) {
+      console.error('Failed to load data from localStorage:', error);
+      // Continue with empty state
+    }
+  }, []);
+
   // Update preview data when files or folder path changes
   useEffect(() => {
     if (files.length > 0) {
@@ -52,6 +76,28 @@ const Index = () => {
       });
     }
   }, [files, folderPath]);
+
+  // Save files to localStorage when they change
+  useEffect(() => {
+    if (files.length > 0) {
+      try {
+        localStorage.setItem(STORAGE_KEY_FILES, JSON.stringify(files));
+      } catch (error) {
+        console.error('Failed to save files to localStorage:', error);
+      }
+    }
+  }, [files]);
+
+  // Save folder path to localStorage when it changes
+  useEffect(() => {
+    if (folderPath) {
+      try {
+        localStorage.setItem(STORAGE_KEY_FOLDER_PATH, JSON.stringify(folderPath));
+      } catch (error) {
+        console.error('Failed to save folder path to localStorage:', error);
+      }
+    }
+  }, [folderPath]);
 
   const handleFilesChange = (newFiles: ImageFile[]) => {
     setFiles(newFiles);
@@ -99,6 +145,23 @@ const Index = () => {
     }
   };
 
+  const handleReset = () => {
+    // Clear state
+    setFiles([]);
+    setFolderPath(null);
+    setPreviewData(null);
+    setActiveStep(0);
+    
+    // Clear localStorage
+    localStorage.removeItem(STORAGE_KEY_FILES);
+    localStorage.removeItem(STORAGE_KEY_FOLDER_PATH);
+    
+    toast({
+      title: "Reset Complete",
+      description: "All data has been cleared. You can start fresh.",
+    });
+  };
+
   const renderStepContent = () => {
     switch (activeStep) {
       case 0:
@@ -122,6 +185,14 @@ const Index = () => {
         <div className="container py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold gradient-text">Preview Card Yapp</h1>
           <div className="flex items-center space-x-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleReset} 
+              className="mr-2"
+            >
+              Reset Data
+            </Button>
             <WalletConnect />
           </div>
         </div>
